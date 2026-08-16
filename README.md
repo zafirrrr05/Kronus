@@ -14,45 +14,10 @@ For measured results, implementation details, design rationale, and repository s
 
 ## Architecture
 
-```text
-                     ┌────────┐              ┌─────────────┐
-                     │ Decoy  │              │ Digital Twin│
-                     └───┬────┘              └──────┬──────┘
-                         │ (sensor)     (hosts Decoy)│
-                         ▼                           ▼
-                   ┌─────────────────────────────────────┐
-                   │          Ingestion Pipeline          │
-                   └───┬───────────────────┬──────────────┘
-                       │                    │
-             (fast lane)│                    │(deep lane)
-                       ▼                    ▼
-                 ┌──────────┐        ┌──────────────┐
-                 │ Bouncer  │        │ Graph Builder │
-                 └────┬─────┘        └───────┬──────┘
-                      │                       ▼
-                      │                ┌──────────┐
-                      │                │Detective │
-                      │                └────┬─────┘
-                      │                     │
-       (decoy bypass) │                     │
-     ┌────────────────┼─────────────────────┘
-     │                ▼
-     │         ┌────────────────┐
-     └────────▶│ Response Engine│◀── OPA + circuit breaker
-               └───────┬────────┘
-              ┌────────┴──────────┐
-              ▼                   ▼
-         ┌─────────┐       ┌─────────────┐
-         │ Logbook │       │LLM Explainer│  (async, cold path)
-         └────┬────┘       └─────────────┘
-              ▼
-       ┌────────────────┐
-       │ Drift Watcher &│  (background)
-       │ Auto-Retrainer │
-       └────────────────┘
+![KRONUS Architecture](docs/architecture/Kronus_architecture.svg)
 
-     Observability (Prometheus/OTel) instruments the system.
-```
+The system is organized into four tiers: Detection Core, Trust & Safety,
+Intelligence, and Production Maturity.
 
 ### The four tiers
 
