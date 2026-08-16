@@ -1,0 +1,39 @@
+# --- schemas & core ---
+pydantic>=2.9,<3
+python-dotenv>=1.0,<2
+
+# --- data / features / classical ML ---
+numpy>=1.26,<3
+pandas>=2.2,<3
+scipy>=1.13,<2
+scikit-learn>=1.5,<2
+
+# --- Bouncer (fast lane) ---
+xgboost>=2.1,<4
+
+# --- Detective (deep lane): hand-rolled GAT, autograd for training, ONNX for serving ---
+autograd>=1.7,<2
+onnx>=1.16,<2
+onnxruntime>=1.19,<2
+
+# --- Decoy: real SSH protocol server ---
+asyncssh>=2.14,<3
+
+# --- Ingestion Pipeline: production event-stream client (Redpanda/Kafka-API) ---
+aiokafka>=0.11,<1
+
+# --- Logbook: production store ---
+psycopg2-binary>=2.9,<3
+
+# --- LLM Explainer ---
+anthropic>=0.40,<1
+
+# --- Observability ---
+prometheus-client>=0.20,<1
+opentelemetry-api>=1.27,<2
+opentelemetry-sdk>=1.27,<2
+
+# --- API layer (for the frontend, see docs/frontend_guide.md) ---
+fastapi>=0.115,<1
+uvicorn>=0.32,<1
+httpx>=0.27,<1

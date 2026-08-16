@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# F401 = unused import, F841 = unused variable — both in the default F set,
+# kept enabled deliberately per the "never declare/import what you don't use" rule.

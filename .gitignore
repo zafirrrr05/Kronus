@@ -1,0 +1,46 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+.venv/
+venv/
+
+# SR-2: never commit real secrets. .env is local-dev only.
+.env
+
+# Real, synthetic, and decoy-captured data are fetched/generated locally,
+# not committed — see docs/setup.md for how to populate these.
+data/real/*
+data/synthetic/*
+data/decoy_captures/*
+!data/real/.gitkeep
+!data/synthetic/.gitkeep
+!data/decoy_captures/.gitkeep
+
+# Trained model artifacts are reproducible from services/*/train.py — not
+# committed, to keep the repo a source tree, not a binary-artifact store.
+models/registry/*
+!models/registry/.gitkeep
+
+*.db
+*.db-journal
+kronus_demo_report.json
+# Private files
+claude.md
+readme_og.md
+docs/architecture/Kronus_architecture.drawio
+build.md
+frontend.md
+
+# Ignore everything in infra folder (no files should be pushed)
+infra/
+
+# Ignore generated infra artefacts (state files, secrets, etc.)
+infra/*.tfstate
+infra/.terraform/
+infra/*.env
+infra/*.key
+infra/*.pem
+infra/*.secret
