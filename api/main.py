@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from libs.observability import configure_tracing, start_metrics_server
+from libs.schemas import TelemetryEvent
 from pipeline.kronus_system import KronusSystem
 
 app = FastAPI(title="KRONUS API", version="1.0.0")
@@ -103,6 +104,38 @@ async def block_status(target_ip: str) -> dict:
     system = get_system()
     now = datetime.now(timezone.utc)
     return {"target_ip": target_ip, "blocked": system._response_engine.is_blocked(target_ip, now)}
+
+
+@app.post("/events")
+async def ingest_event_endpoint(event: TelemetryEvent) -> dict:
+    """Ingests a single telemetry event through the KRONUS detection and policy pipeline."""
+    system = get_system()
+    now = datetime.now(timezone.utc)
+    outcome = await system.ingest_event(event, now=now)
+    return {
+        "status": "ingested",
+        "event_id": event.event_id,
+        "bouncer_verdict": outcome.bouncer_verdict.model_dump(mode="json") if outcome.bouncer_verdict else None,
+        "detective_verdict": outcome.detective_verdict.model_dump(mode="json") if outcome.detective_verdict else None,
+        "decisions": [d.model_dump(mode="json") for d in outcome.decisions],
+    }
+
+
+@app.post("/events/batch")
+async def ingest_events_batch_endpoint(events: list[TelemetryEvent]) -> dict:
+    """Ingests a batch of telemetry events through the KRONUS pipeline."""
+    system = get_system()
+    now = datetime.now(timezone.utc)
+    outcomes = []
+    for ev in events:
+        outcomes.append(await system.ingest_event(ev, now=now))
+    return {
+        "status": "ingested",
+        "count": len(events),
+        "bouncer_verdicts": sum(1 for o in outcomes if o.bouncer_verdict),
+        "detective_verdicts": sum(1 for o in outcomes if o.detective_verdict),
+        "decisions": sum(len(o.decisions) for o in outcomes),
+    }
 
 
 @app.websocket("/live")

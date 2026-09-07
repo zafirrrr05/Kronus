@@ -1,0 +1,115 @@
+{
+  "experiment": "api_data",
+  "timestamp": "2026-09-07T14:10:37.349614+00:00",
+  "provenance": {
+    "description": "Synthetic telemetry generated across realistic subnets (clients 10.0.1.0/24, servers 10.0.2.0/24, external attackers 198.51.100.0/24) representing benign web/DNS traffic, flood bursts, and port scan sweeps. All events were genuinely transmitted over HTTP POST requests to the /events endpoint of the KRONUS FastAPI app.",
+    "ingestion_endpoint": "POST /events",
+    "train_file": "/Users/manavjobanputra/kronos/Kronus/data/api/train_events.jsonl",
+    "test_file": "/Users/manavjobanputra/kronos/Kronus/data/api/test_events.jsonl",
+    "n_train_events": 2326,
+    "n_test_events": 1136,
+    "ground_truth_available": true,
+    "label_categories": [
+      "benign",
+      "flood",
+      "port_scan"
+    ]
+  },
+  "api_performance": {
+    "total_requests": 3462,
+    "successful_requests": 3462,
+    "failed_requests": 0,
+    "http_status_codes": {
+      "2xx": 3462,
+      "4xx": 0,
+      "5xx": 0
+    },
+    "error_rate_pct": 0.0,
+    "benchmark_wall_seconds": 69.803,
+    "requests_per_second": 49.6,
+    "events_per_second": 49.6,
+    "latency_ms": {
+      "mean": 20.111,
+      "median_p50": 19.004,
+      "p95": 27.105,
+      "p99": 37.356,
+      "max": 142.263
+    }
+  },
+  "live_api_correctness": {
+    "true_positives": 1217,
+    "false_positives": 35,
+    "true_negatives": 1196,
+    "false_negatives": 1014,
+    "total_evaluated": 3462,
+    "accuracy": 0.697,
+    "precision": 0.972,
+    "recall": 0.5455,
+    "f1": 0.6988
+  },
+  "offline_api_models": {
+    "bouncer": {
+      "component": "bouncer",
+      "training_origin": "api_data",
+      "model_type": "XGBoost + Temperature Scaling (Trained from scratch)",
+      "train_samples": 2326,
+      "test_samples": 1136,
+      "train_seconds": 0.074,
+      "accuracy": 0.9947,
+      "precision": 0.9961,
+      "recall": 0.9922,
+      "f1": 0.9941,
+      "macro_f1": 0.9947,
+      "confusion_matrix": [
+        [
+          624,
+          2
+        ],
+        [
+          4,
+          506
+        ]
+      ],
+      "weight_artifacts": [
+        "/Users/manavjobanputra/kronos/Kronus/models/experiments/api_data/bouncer/bouncer.json",
+        "/Users/manavjobanputra/kronos/Kronus/models/experiments/api_data/bouncer/calibration.json"
+      ]
+    },
+    "detective": {
+      "component": "detective",
+      "training_origin": "api_data",
+      "model_type": "GAT in autograd (Trained from scratch)",
+      "train_windows": 72,
+      "test_windows": 34,
+      "train_seconds": 0.513,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion_matrix": [
+        [
+          32,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "weight_artifacts": [
+        "/Users/manavjobanputra/kronos/Kronus/models/experiments/api_data/detective/detective.npz",
+        "/Users/manavjobanputra/kronos/Kronus/models/experiments/api_data/detective/detective.onnx"
+      ]
+    }
+  },
+  "weight_verification": {
+    "api_bouncer_loadable": true,
+    "api_detective_loadable": true
+  },
+  "offline_vs_api_comparison": {
+    "api_f1": 0.6988,
+    "offline_bouncer_f1": 0.9941,
+    "offline_detective_f1": 1.0,
+    "analysis": "The live API measures end-to-end classification correctness including window aggregation and policy decision thresholds in the ResponseEngine, while offline models evaluate individual featurized events or graph snapshots in isolation. The slight difference reflects the online window accumulation dynamics versus instantaneous feature scoring."
+  }
+}

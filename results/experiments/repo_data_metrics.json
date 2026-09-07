@@ -1,0 +1,174 @@
+{
+  "experiment": "repo_data",
+  "timestamp": "2026-09-07T14:04:31.967774+00:00",
+  "dataset": {
+    "train_path": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTrain+.txt",
+    "test_path": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTest+.txt",
+    "n_train_rows": 125973,
+    "n_test_rows": 22544
+  },
+  "bouncer": {
+    "component": "bouncer",
+    "model_type": "XGBoost + Temperature Scaling",
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "n_features": 6,
+    "dataset_train": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTrain+.txt",
+    "dataset_test": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTest+.txt",
+    "n_train": 125973,
+    "n_test": 22544,
+    "train_seconds": 0.22,
+    "eval_seconds": 0.0,
+    "temperature": 0.9678680085945095,
+    "accuracy": 0.884,
+    "precision": 0.8509,
+    "recall": 0.7873,
+    "f1": 0.8179,
+    "macro_precision": 0.8747,
+    "macro_recall": 0.8595,
+    "macro_f1": 0.8664,
+    "per_class": {
+      "negative_non_flood": {
+        "precision": 0.8985,
+        "recall": 0.9318,
+        "f1": 0.9149,
+        "support": 15084
+      },
+      "positive_flood": {
+        "precision": 0.8509,
+        "recall": 0.7873,
+        "f1": 0.8179,
+        "support": 7460
+      }
+    },
+    "confusion_matrix": [
+      [
+        14055,
+        1029
+      ],
+      [
+        1587,
+        5873
+      ]
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/Kronus/models/experiments/repo_data/bouncer/bouncer.json",
+      "/Users/manavjobanputra/kronos/Kronus/models/experiments/repo_data/bouncer/calibration.json"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "model_type": "Hand-rolled Graph Attention Network (GAT) in NumPy/autograd",
+    "architecture": {
+      "hidden_dim": 32,
+      "edge_embed_dim": 8,
+      "num_layers": 3,
+      "classes": [
+        "benign",
+        "port_scan"
+      ]
+    },
+    "dataset_train": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTrain+.txt",
+    "dataset_test": "/Users/manavjobanputra/kronos/Kronus/data/real/KDDTest+.txt",
+    "limit": 20000,
+    "epochs": 4,
+    "n_train_windows": 200,
+    "n_test_windows": 123,
+    "train_seconds": 2.79,
+    "eval_seconds": 0.12,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "macro_precision": 1.0,
+    "macro_recall": 1.0,
+    "macro_f1": 1.0,
+    "per_class": {
+      "benign": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 98
+      },
+      "port_scan": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 25
+      }
+    },
+    "confusion_matrix": [
+      [
+        98,
+        0
+      ],
+      [
+        0,
+        25
+      ]
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/Kronus/models/experiments/repo_data/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/Kronus/models/experiments/repo_data/detective/detective.onnx"
+    ]
+  },
+  "historical_comparison": {
+    "bouncer": {
+      "historical": {
+        "dataset_train": "NSL-KDD KDDTrain+.txt (125,973 rows)",
+        "dataset_test": "NSL-KDD KDDTest+.txt (22,544 rows)",
+        "accuracy": 0.884,
+        "precision": 0.851,
+        "recall": 0.787,
+        "f1": 0.818
+      },
+      "measured": {
+        "accuracy": 0.884,
+        "precision": 0.8509,
+        "recall": 0.7873,
+        "f1": 0.8179
+      },
+      "discrepancies": {
+        "accuracy_delta": 0.0,
+        "precision_delta": -0.0001,
+        "recall_delta": 0.0003,
+        "f1_delta": -0.0001
+      },
+      "analysis": "Bouncer matches historical metrics closely. Minor variations can arise from the random calibration train/val split seed (20% split) and XGBoost minor version differences across runtime environments."
+    },
+    "detective": {
+      "historical": {
+        "task": "Structural benign-vs-port_scan on graph windows",
+        "dataset_train": "NSL-KDD KDDTrain+.txt (normal and probe streams, limit=20,000)",
+        "dataset_test": "NSL-KDD KDDTest+.txt (held out normal and probe streams)",
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "measured": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "discrepancies": {
+        "accuracy_delta": 0.0,
+        "precision_delta": 0.0,
+        "recall_delta": 0.0,
+        "f1_delta": 0.0
+      },
+      "analysis": "Detective achieves the expected structural separability score on normal vs port_scan graph windows. Because normal traffic and probe traffic form topologically distinct bipartite/fan-out graphs, the GAT attention layers cleanly separate the two classes."
+    }
+  },
+  "weight_verification": {
+    "bouncer_loadable": true,
+    "detective_loadable": true
+  }
+}

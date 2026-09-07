@@ -79,6 +79,26 @@ For operating the running system, see [`docs/instructions.md`](docs/instructions
 
 For frontend integration, see [`docs/frontend_guide.md`](docs/frontend_guide.md).
 
+For full details on the independent ML experiments, data provenance, and benchmarking, see [`docs/experiments_guide.md`](docs/experiments_guide.md).
+
+---
+
+## ML Experiments: Repo Data vs API Data
+
+KRONUS provides two independent ML experiment pipelines with complete weight and metric isolation:
+
+1. **Repo-Data Experiment:**
+   - Reproduces offline model training using NSL-KDD (`KDDTrain+` / `KDDTest+`).
+   - Run command: `python scripts/run_repo_experiment.py`
+   - Trained weights: `models/experiments/repo_data/bouncer/`, `models/experiments/repo_data/detective/`
+   - Metrics: `results/experiments/repo_data_metrics.json` (Bouncer F1: 0.8179, Detective F1: 1.0000)
+
+2. **API-Data Experiment:**
+   - Transmits telemetry over HTTP (`POST /events`), benchmarks API latency & throughput, and trains independent models from scratch.
+   - Run command: `python scripts/run_api_experiment.py`
+   - Trained weights: `models/experiments/api_data/bouncer/`, `models/experiments/api_data/detective/`
+   - Metrics: `results/experiments/api_data_metrics.json` (Bouncer F1: 0.9941, Detective F1: 1.0000, Live API F1: 0.6988)
+
 ---
 
 ## Production readiness

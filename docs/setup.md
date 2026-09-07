@@ -125,6 +125,46 @@ python -m pytest tests/integration/test_flow_cases.py -v
 python -m pytest tests/unit/test_detective_model.py -v
 ```
 
+## 6b. (Optional) External-dataset validation — CIC-IDS2017
+
+The models are *trained* on NSL-KDD (step 5). CIC-IDS2017 is an independent
+dataset — a different network, captured with a different tool (CICFlowMeter)
+years later — used to measure cross-dataset generalization, the SLO table's
+"External-dataset F1" row. Nothing is retrained here; the NSL-KDD-trained
+models score CIC-IDS2017 flows they have never seen.
+
+The dataset (~500 MB of labelled-flow CSVs) is hosted by the University of
+New Brunswick behind a short registration form, so it isn't fetched by
+default. Get it, then validate:
+
+```bash
+# Option A: you have a direct URL to a .zip of the CSVs
+python scripts/download_cicids2017.py --url "<your-url>"
+
+# Option B: you downloaded the GeneratedLabelledFlows archive manually from
+# https://www.unb.ca/cic/datasets/ids-2017.html
+python scripts/download_cicids2017.py --from-local ~/Downloads/GeneratedLabelledFlows.zip
+
+# Option C: just print instructions and where to drop the CSVs
+python scripts/download_cicids2017.py
+
+# then, once the CSVs are in data/external/cicids2017/:
+python scripts/validate_cicids2017.py
+```
+
+`validate_cicids2017.py` replays CIC-IDS2017 flows through the *same* live
+featurizer and graph builder used at training time (no train/serve skew),
+scores both lanes, writes `models/registry/external_validation_cicids2017.json`,
+and exits non-zero if a lane falls below the F1 > 0.85 SLO (pass `--no-gate`
+to report without gating, or `--limit N` to cap rows per lane for a quick
+run). If the dataset or trained models aren't present, it skips gracefully
+with a message rather than failing.
+
+The loader (`twin/cicids2017.py`) is covered by
+`tests/unit/test_cicids2017_loader.py`, which runs without the large download
+(it builds small CIC-IDS2017-shaped frames in a tmp dir); the real-data test
+in that file skips gracefully until the CSVs are in place.
+
 ## 7. Run the demo
 
 ```bash

@@ -6,6 +6,7 @@ __pycache__/
 
 .venv/
 venv/
+bin/
 
 # SR-2: never commit real secrets. .env is local-dev only.
 .env
@@ -23,6 +24,17 @@ data/decoy_captures/*
 # committed, to keep the repo a source tree, not a binary-artifact store.
 models/registry/*
 !models/registry/.gitkeep
+
+# Experiment weights (reproducible via scripts/run_*_experiment.py)
+models/experiments/*
+!models/experiments/.gitkeep
+
+# Experiment results (JSON metrics — lightweight, committed intentionally)
+# results/ is committed — see results/experiments/*.json
+
+# API-collected data (generated on-demand, not committed — data/api/*.jsonl)
+data/api/*
+!data/api/.gitkeep
 
 *.db
 *.db-journal
