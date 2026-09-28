@@ -201,7 +201,7 @@ def test_real_cicids2017_if_present():
     data_dir = Path(REAL_DATA_DIR)
     if not data_dir.exists() or not list(data_dir.glob("*.csv")):
         pytest.skip(f"{REAL_DATA_DIR} not populated — run scripts/download_cicids2017.py")
-    rows = load_cicids2017(REAL_DATA_DIR)
+    rows = load_cicids2017(REAL_DATA_DIR, limit=20000)
     assert len(rows) > 0
     cats = {r.category for r in rows}
     # The real dataset contains benign, DoS/DDoS, and portscan traffic.

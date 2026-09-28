@@ -143,7 +143,9 @@ def _coerce_numeric(series: pd.Series) -> pd.Series:
     return out.replace([float("inf"), float("-inf")], 0.0).fillna(0.0)
 
 
-def _row_to_nslkdd_row(row: pd.Series, index: int) -> NSLKDDRow | None:
+def _row_to_nslkdd_row(
+    row: dict | pd.Series, index: int, feature_cols: list[str] | None = None
+) -> NSLKDDRow | None:
     category = CIC_ATTACK_CATEGORY.get(_normalize_label(row[_LABEL]))
     if category is None:
         # An unrecognized label (a stray repeated header row, or a label from
@@ -160,10 +162,14 @@ def _row_to_nslkdd_row(row: pd.Series, index: int) -> NSLKDDRow | None:
         int(_safe_float(row.get(_FWD_BYTES, 0.0)) + _safe_float(row.get(_BWD_BYTES, 0.0))), 0
     )
 
+    if feature_cols is None:
+        cols = row.keys() if isinstance(row, dict) else row.index
+        feature_cols = [col for col in cols if col not in (_SRC_IP, _DST_IP, _LABEL)]
+
     features = {
         col: _safe_float(row[col])
-        for col in row.index
-        if col not in (_SRC_IP, _DST_IP, _LABEL) and _is_numlike(row[col])
+        for col in feature_cols
+        if _is_numlike(row[col])
     }
 
     return NSLKDDRow(
@@ -214,11 +220,19 @@ def _is_numlike(v) -> bool:
 def _read_one_csv(path: Path) -> pd.DataFrame:
     # low_memory=False: CIC CSVs mix types within a column (the Inf/NaN
     # strings), which triggers pandas' mixed-type chunk warning otherwise.
-    df = pd.read_csv(path, low_memory=False, skipinitialspace=False)
+    # encoding='latin-1': TrafficLabelling CSVs use Windows-1252 (e.g. 0x96 =
+    # en-dash in label strings like "Web Attack – Brute Force"). Latin-1 maps
+    # every byte 0x00–0xFF to the same codepoint, so it reads all bytes safely.
+    try:
+        df = pd.read_csv(path, low_memory=False, skipinitialspace=False, encoding='utf-8')
+    except UnicodeDecodeError:
+        df = pd.read_csv(path, low_memory=False, skipinitialspace=False, encoding='latin-1')
     return _clean_columns(df)
 
 
-def load_cicids2017(path: str | Path) -> list[NSLKDDRow]:
+def load_cicids2017(
+    path: str | Path, limit: int | None = None, sample_per_file: int | None = None
+) -> list[NSLKDDRow]:
     """Load CIC-IDS2017 labelled flows into the shared NSLKDDRow shape.
 
     `path` may be a single CSV file or a directory of them (the eight
@@ -242,22 +256,45 @@ def load_cicids2017(path: str | Path) -> list[NSLKDDRow]:
                     f"columns seen: {list(df.columns)[:8]}... — is this a "
                     "CIC-IDS2017 GeneratedLabelledFlows CSV?"
                 )
-            for i, row in df.iterrows():
-                converted = _row_to_nslkdd_row(row, i)
+            if sample_per_file is not None and sample_per_file > 0 and len(df) > sample_per_file:
+                df = df.iloc[:sample_per_file]
+            feature_cols = [c for c in df.columns if c not in (_SRC_IP, _DST_IP, _LABEL)]
+            records = df.to_dict("records")
+            for i, row in enumerate(records):
+                converted = _row_to_nslkdd_row(row, i, feature_cols)
                 if converted is not None:
                     rows.append(converted)
+                    if limit is not None and len(rows) >= limit:
+                        return rows
         return rows
 
 
 def _resolve_csv_paths(path: Path) -> list[Path]:
     if path.is_dir():
-        csv_paths = sorted(path.glob("*.csv"))
+        csv_paths = list(path.glob("*.csv"))
         if not csv_paths:
             raise FileNotFoundError(
                 f"No CIC-IDS2017 CSVs found in {path}/. Run "
                 "`python scripts/download_cicids2017.py` (see docs/setup.md §external)."
             )
-        return csv_paths
+        # Sort attack-heavy files first so per-file or limit-based loads
+        # get a useful class distribution. Monday is all-benign so goes last.
+        _ATTACK_PRIORITY = {
+            "Friday-WorkingHours-Afternoon-DDos": 0,
+            "Friday-WorkingHours-Afternoon-PortScan": 1,
+            "Wednesday-workingHours": 2,
+            "Thursday-WorkingHours-Morning-WebAttacks": 3,
+            "Thursday-WorkingHours-Afternoon-Infilteration": 4,
+            "Friday-WorkingHours-Morning": 5,
+            "Tuesday-WorkingHours": 6,
+            "Monday-WorkingHours": 7,
+        }
+        def _priority(p: Path) -> int:
+            for key, pri in _ATTACK_PRIORITY.items():
+                if key.lower() in p.stem.lower():
+                    return pri
+            return 99
+        return sorted(csv_paths, key=_priority)
     if path.is_file():
         return [path]
     raise FileNotFoundError(
