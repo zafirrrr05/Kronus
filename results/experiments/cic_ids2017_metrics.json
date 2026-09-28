@@ -7,7 +7,9 @@
     "full_name": "Canadian Institute for Cybersecurity Intrusion Detection Dataset 2017",
     "url": "https://www.unb.ca/cic/datasets/ids-2017.html",
     "citation": "Iman Sharafaldin, Arash Habibi Lashkari, Ali A. Ghorbani, 'Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization', 4th ICISSP, Portugal, January 2018.",
-    "files": "GeneratedLabelledFlows / MachineLearningCSV (eight *.pcap_ISCX.csv files)",
+    "files": "GeneratedLabelledFlows / TrafficLabelling (eight *.pcap_ISCX.csv files)",
+    "n_train_rows": 1778042,
+    "n_test_rows": 875754,
     "total_rows": 2828563,
     "category_distribution": {
       "normal": 2273097,
@@ -17,52 +19,46 @@
       "r2l": 15801
     }
   },
-  "label_mapping": {
-    "description": "CIC fine-grained labels \u2192 KRONUS task labels",
-    "benign": "KRONUS benign (graph: normal)",
-    "dos_hulk_goldeneye_slowloris_slowhttptest_ddos_heartbleed": "KRONUS flood (Bouncer task)",
-    "portscan": "KRONUS port_scan (Detective task)",
-    "ftp_patator_ssh_patator_web_attack_bot_infiltration": "generic non-benign signal \u2014 no clean KRONUS label mapping, used as non-flood signal in Bouncer split"
-  },
-  "feature_mapping": {
-    "description": "CIC flow records \u2192 KRONUS Bouncer features via live KRONUS pipeline",
-    "pipeline": "twin.cicids2017.load_cicids2017 \u2192 services.telemetry_exporter.converters.flow_row_to_event \u2192 services.bouncer.features.FlowFeaturizer.features_for",
-    "features": {
-      "event_rate": "events-per-second from FlowFeaturizer sliding window",
-      "byte_rate": "bytes-per-second from FlowFeaturizer sliding window",
-      "dest_port_entropy": "Shannon entropy of destination ports in window",
-      "unique_dest_count": "unique destination IPs in window",
-      "avg_duration_ms": "mean flow duration from CIC Duration field",
-      "same_dest_ratio": "fraction of events to the single most-targeted dest"
-    }
-  },
-  "train_test_split": {
-    "method": "per-class stratified split",
-    "train_ratio": 0.67,
-    "seed": 42,
-    "leakage_check": "split computed from disjoint index sets; verified structurally"
-  },
-  "independence_guarantee": "Models initialized fresh with no weight loading from repo-data (NSL-KDD) experiment. Separate artifact directories: models/experiments/cic_ids2017/",
   "bouncer": {
     "component": "bouncer",
-    "training_origin": "cic_ids2017",
-    "dataset_source": "CIC-IDS2017 (GeneratedLabelledFlows/MachineLearningCSV)",
-    "dataset_url": "https://www.unb.ca/cic/datasets/ids-2017.html",
-    "model_type": "XGBoost + Temperature Scaling (trained from scratch, no NSL-KDD weight init)",
-    "task": "binary flood-vs-not classification (DoS/DDoS \u2192 flood, BENIGN \u2192 not-flood)",
-    "seed": 42,
-    "train_ratio": 0.67,
+    "model_type": "XGBoost + Temperature Scaling",
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "n_features": 6,
+    "dataset_train": "CIC-IDS2017 TrafficLabelling (1,778,042 rows)",
+    "dataset_test": "CIC-IDS2017 TrafficLabelling (875,754 rows)",
     "n_train": 1778042,
     "n_test": 875754,
-    "n_train_flood": 255068,
-    "n_train_normal": 1522974,
-    "n_test_flood": 125631,
-    "n_test_normal": 750123,
     "train_seconds": 2.279,
+    "eval_seconds": 0.219,
+    "temperature": 1.0,
     "accuracy": 0.9996,
     "precision": 0.999,
     "recall": 0.9985,
-    "f1": 0.9988,
+    "f1": 0.9987,
+    "macro_precision": 0.9994,
+    "macro_recall": 0.9992,
+    "macro_f1": 0.9993,
+    "per_class": {
+      "negative_non_flood": {
+        "precision": 0.9997,
+        "recall": 0.9998,
+        "f1": 0.9998,
+        "support": 750123
+      },
+      "positive_flood": {
+        "precision": 0.999,
+        "recall": 0.9985,
+        "f1": 0.9987,
+        "support": 125631
+      }
+    },
     "confusion_matrix": [
       [
         749997,
@@ -73,14 +69,6 @@
         125443
       ]
     ],
-    "features": [
-      "event_rate",
-      "byte_rate",
-      "dest_port_entropy",
-      "unique_dest_count",
-      "avg_duration_ms",
-      "same_dest_ratio"
-    ],
     "weight_artifacts": [
       "/Users/manavjobanputra/kronos/models/experiments/cic_ids2017/bouncer/bouncer.json",
       "/Users/manavjobanputra/kronos/models/experiments/cic_ids2017/bouncer/calibration.json"
@@ -88,20 +76,45 @@
   },
   "detective": {
     "component": "detective",
-    "training_origin": "cic_ids2017",
-    "dataset_source": "CIC-IDS2017 (GeneratedLabelledFlows/MachineLearningCSV)",
-    "dataset_url": "https://www.unb.ca/cic/datasets/ids-2017.html",
-    "model_type": "GAT in autograd (trained from scratch, no NSL-KDD weight init)",
-    "task": "macro benign-vs-port_scan graph window classification",
-    "seed": 42,
-    "train_ratio": 0.67,
-    "train_windows": 268,
-    "test_windows": 132,
+    "model_type": "Hand-rolled Graph Attention Network (GAT) in NumPy/autograd",
+    "architecture": {
+      "hidden_dim": 32,
+      "edge_embed_dim": 8,
+      "num_layers": 3,
+      "classes": [
+        "benign",
+        "port_scan"
+      ]
+    },
+    "dataset_train": "CIC-IDS2017 TrafficLabelling (268 graph windows)",
+    "dataset_test": "CIC-IDS2017 TrafficLabelling (132 graph windows)",
+    "limit": 20000,
+    "epochs": 4,
+    "n_train_windows": 268,
+    "n_test_windows": 132,
     "train_seconds": 2.141,
+    "eval_seconds": 0.09,
     "accuracy": 0.9848,
-    "precision": 0.9853,
-    "recall": 0.9848,
-    "f1": 0.9848,
+    "precision": 1.0,
+    "recall": 0.9697,
+    "f1": 0.9846,
+    "macro_precision": 0.9853,
+    "macro_recall": 0.9848,
+    "macro_f1": 0.9848,
+    "per_class": {
+      "benign": {
+        "precision": 0.9706,
+        "recall": 1.0,
+        "f1": 0.9851,
+        "support": 66
+      },
+      "port_scan": {
+        "precision": 1.0,
+        "recall": 0.9697,
+        "f1": 0.9846,
+        "support": 66
+      }
+    },
     "confusion_matrix": [
       [
         66,
@@ -117,8 +130,57 @@
       "/Users/manavjobanputra/kronos/models/experiments/cic_ids2017/detective/detective.onnx"
     ]
   },
+  "historical_comparison": {
+    "bouncer": {
+      "historical": {
+        "dataset_train": "NSL-KDD KDDTrain+.txt (125,973 rows)",
+        "dataset_test": "NSL-KDD KDDTest+.txt  (22,544 rows)",
+        "accuracy": 0.884,
+        "precision": 0.851,
+        "recall": 0.787,
+        "f1": 0.818
+      },
+      "measured": {
+        "accuracy": 0.9996,
+        "precision": 0.999,
+        "recall": 0.9985,
+        "f1": 0.9987
+      },
+      "discrepancies": {
+        "accuracy_delta": 0.1156,
+        "precision_delta": 0.148,
+        "recall_delta": 0.2115,
+        "f1_delta": 0.1807
+      },
+      "analysis": "CIC-IDS2017 Bouncer significantly outperforms NSL-KDD baseline (F1 0.9988 vs 0.818). CIC flows map cleanly to KRONUS features via the live telemetry pipeline; DoS/DDoS traffic is structurally distinct from benign at the flow-feature level, giving XGBoost strong signal."
+    },
+    "detective": {
+      "historical": {
+        "task": "Structural benign-vs-port_scan on graph windows",
+        "dataset_train": "NSL-KDD KDDTrain+.txt (normal and probe streams, limit=20,000)",
+        "dataset_test": "NSL-KDD KDDTest+.txt (held-out normal and probe streams)",
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "measured": {
+        "accuracy": 0.9848,
+        "precision": 1.0,
+        "recall": 0.9697,
+        "f1": 0.9846
+      },
+      "discrepancies": {
+        "accuracy_delta": -0.0152,
+        "precision_delta": 0.0,
+        "recall_delta": -0.0303,
+        "f1_delta": -0.0154
+      },
+      "analysis": "CIC-IDS2017 Detective achieves F1=0.9848 vs perfect 1.0 on NSL-KDD. CIC PortScan traffic is more structurally varied than NSL-KDD probe, causing 2 misclassifications in 132 test windows. Still production-grade performance on an independent real-world dataset."
+    }
+  },
   "weight_verification": {
-    "cic_bouncer_loadable": true,
-    "cic_detective_loadable": true
+    "bouncer_loadable": true,
+    "detective_loadable": true
   }
 }
