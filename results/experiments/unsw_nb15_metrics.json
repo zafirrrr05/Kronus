@@ -1,0 +1,98 @@
+{
+  "experiment": "unsw_nb15",
+  "status": "COMPLETE",
+  "timestamp": "2026-10-06T09:17:27.336826+00:00",
+  "dataset": {
+    "source": "UNSW-NB15 (Australian Centre for Cyber Security, UNSW Canberra)",
+    "url": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+    "total_flows": 257673,
+    "category_distribution": {
+      "normal": 93000,
+      "r2l": 134333,
+      "probe": 13987,
+      "dos": 16353
+    },
+    "synthetic_hosts": true,
+    "synthetic_hosts_note": "The author-supplied UNSW-NB15 pre-split CSVs carry no IP addresses or port numbers. Source/destination hosts are reconstructed deterministically from each row's own connection-rate counters (twin/unsw_nb15.py). Flow FEATURES are real; graph TOPOLOGY is reconstructed, exactly as twin/nsl_kdd.py does for NSL-KDD."
+  },
+  "bouncer": {
+    "component": "bouncer",
+    "training_origin": "unsw_nb15",
+    "dataset_source": "UNSW-NB15 (Australian Centre for Cyber Security, UNSW Canberra)",
+    "dataset_url": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+    "model_type": "XGBoost + Temperature Scaling (trained from scratch)",
+    "task": "binary DoS-flood vs benign classification",
+    "synthetic_hosts": true,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "n_train": 24356,
+    "n_test": 11997,
+    "n_train_attack": 10956,
+    "n_train_normal": 13400,
+    "n_test_attack": 5397,
+    "n_test_normal": 6600,
+    "train_seconds": 0.169,
+    "accuracy": 0.9967,
+    "precision": 0.9994,
+    "recall": 0.9931,
+    "f1": 0.9963,
+    "confusion_matrix": [
+      [
+        6597,
+        3
+      ],
+      [
+        37,
+        5360
+      ]
+    ],
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/bouncer/bouncer.json",
+      "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/bouncer/calibration.json"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "training_origin": "unsw_nb15",
+    "dataset_source": "UNSW-NB15 (Australian Centre for Cyber Security, UNSW Canberra)",
+    "dataset_url": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+    "model_type": "GAT in autograd (trained from scratch)",
+    "task": "macro benign vs port_scan graph window classification",
+    "synthetic_hosts": true,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "train_windows": 134,
+    "test_windows": 66,
+    "train_seconds": 1.843,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "confusion_matrix": [
+      [
+        33,
+        0
+      ],
+      [
+        0,
+        33
+      ]
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/detective/detective.onnx"
+    ]
+  },
+  "weight_verification": {
+    "unsw_nb15_bouncer_loadable": true,
+    "unsw_nb15_detective_loadable": true
+  }
+}

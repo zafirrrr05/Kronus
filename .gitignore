@@ -32,7 +32,16 @@ models/experiments/*
 # Experiment results (JSON metrics — lightweight, committed intentionally)
 # results/ is committed — see results/experiments/*.json
 
-# API-collected data (generated on-demand, not committed — data/api/*.jsonl)
+# External datasets (large; fetched per-experiment, never committed).
+# `*/*` ignores each dataset's contents but NOT the dataset directory itself,
+# so the .gitkeep placeholder inside each one can still be re-included below.
+# This covers every dataset, not just CIC-IDS2017 — new experiment datasets are
+# multi-GB raw corpora and must never enter the repo.
+data/external/*/*
+!data/external/*/.gitkeep
+
+# data/api/ previously held synthetic generated events — that experiment has been
+# removed. The directory is kept as a placeholder; nothing in it is committed.
 data/api/*
 !data/api/.gitkeep
 
