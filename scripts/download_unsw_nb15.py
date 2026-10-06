@@ -162,6 +162,7 @@ def _from_mirror(dest: Path) -> int:
             target.unlink(missing_ok=True)
             return 1
         print(f"  saved {official_name} ({got:,} bytes, verified)")
+    return 0
 
 
 def _from_url(url: str, dest: Path) -> int:
