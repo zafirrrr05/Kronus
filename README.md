@@ -83,21 +83,32 @@ For full details on the independent ML experiments, data provenance, and benchma
 
 ---
 
-## ML Experiments: Repo Data vs API Data
+## ML Experiments
 
-KRONUS provides two independent ML experiment pipelines with complete weight and metric isolation:
+KRONUS provides three completely independent ML experiment pipelines with separate weights and metrics:
 
-1. **Repo-Data Experiment:**
-   - Reproduces offline model training using NSL-KDD (`KDDTrain+` / `KDDTest+`).
+1. **Experiment A — Repo Data (NSL-KDD):**
+   - Trains Bouncer and Detective independently using the NSL-KDD dataset already in the repository (`data/real/`).
    - Run command: `python scripts/run_repo_experiment.py`
    - Trained weights: `models/experiments/repo_data/bouncer/`, `models/experiments/repo_data/detective/`
    - Metrics: `results/experiments/repo_data_metrics.json` (Bouncer F1: 0.8179, Detective F1: 1.0000)
 
-2. **API-Data Experiment:**
-   - Transmits telemetry over HTTP (`POST /events`), benchmarks API latency & throughput, and trains independent models from scratch.
-   - Run command: `python scripts/run_api_experiment.py`
-   - Trained weights: `models/experiments/api_data/bouncer/`, `models/experiments/api_data/detective/`
-   - Metrics: `results/experiments/api_data_metrics.json` (Bouncer F1: 0.9941, Detective F1: 1.0000, Live API F1: 0.6988)
+2. **Experiment B — CIC-IDS2017 (External Dataset):**
+   - Trains Bouncer and Detective independently using the [CIC-IDS2017](https://www.unb.ca/cic/datasets/ids-2017.html) external network intrusion detection dataset from the University of New Brunswick.
+   - **Data must be obtained separately** — see `docs/experiments_guide.md` for instructions.
+   - Run command: `python scripts/run_cic_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/cic_ids2017/bouncer/`, `models/experiments/cic_ids2017/detective/`
+   - Metrics: `results/experiments/cic_ids2017_metrics.json` (Bouncer F1: 0.9987, Detective F1: 0.9846, 2,828,563 flows)
+   - **Note:** CIC-IDS2017 is an external dataset evaluated through the KRONUS inference path. It is NOT synthetic and NOT renamed NSL-KDD data.
+
+3. **Experiment C — UNSW-NB15 (External Dataset):**
+   - Trains Bouncer and Detective independently using the [UNSW-NB15](https://research.unsw.edu.au/projects/unsw-nb15-dataset) external dataset from the Australian Centre for Cyber Security, UNSW Canberra.
+   - Carries a genuine Reconnaissance class, so **both** KRONUS lanes train from one dataset: Bouncer on DoS-vs-normal, Detective on Reconnaissance-vs-normal.
+   - **Data must be obtained separately** — see `docs/experiments_guide.md` for instructions.
+   - Run command: `python scripts/run_unsw_nb15_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/unsw_nb15/bouncer/`, `models/experiments/unsw_nb15/detective/`
+   - Metrics: `results/experiments/unsw_nb15_metrics.json` (Bouncer F1: 0.9963, Detective F1: 1.0000, 257,673 flows)
+   - **Honest disclosure:** the author-supplied pre-split CSVs carry no IP addresses, so hosts are reconstructed deterministically from each row's own connection-rate counters. Flow *features* are real; graph *topology* is reconstructed (`"synthetic_hosts": true` in the metrics).
 
 ---
 
