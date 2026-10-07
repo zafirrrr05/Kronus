@@ -85,7 +85,7 @@ For full details on the independent ML experiments, data provenance, and benchma
 
 ## ML Experiments
 
-KRONUS provides four completely independent ML experiment pipelines with separate weights and metrics:
+KRONUS provides five completely independent ML experiment pipelines with separate weights and metrics:
 
 1. **Experiment A — Repo Data (NSL-KDD):**
    - Trains Bouncer and Detective independently using the NSL-KDD dataset already in the repository (`data/real/`).
@@ -118,6 +118,16 @@ KRONUS provides four completely independent ML experiment pipelines with separat
    - Run command: `python scripts/run_dohbrw2020_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
    - Trained weights: `models/experiments/dohbrw2020/detective/`
    - Metrics: `results/experiments/dohbrw2020_metrics.json` (Detective F1: 0.9697, 60,000 flows)
+
+5. **Experiment E — CIC-Bell-DNS-EXF-2021 (External Dataset) — a deliberately negative result:**
+   - Runs the KRONUS **Detective** end to end on [CIC-Bell-DNS-EXF-2021](https://www.unb.ca/cic/datasets/dns-exf-2021.html) (UNB/CIC), a DNS-exfiltration capture — then reports that the dataset cannot support a detection claim.
+   - **Why it is negative:** the label is a capture-level annotation and is not recoverable from the features. Measured across all 536,138 rows: 72.78% sit on a feature vector carrying *two different labels*, including 99.95% of the exfiltration rows — a hard accuracy ceiling of **0.8210** for any model, below this repo's own F1 > 0.85 SLO. Removing the ambiguous vectors leaves the attack class with 32 distinct signatures, so the experiment records `verdict: NO_VALID_DETECTION_METRIC` and `reportable_as_detection: false` rather than quoting the 1.0000 its smoke test scores. A perfect score over 34 windows containing one positive example is a lookup table, not detection.
+   - **Second, independent problem:** the dataset has **no IPs, no ports, no byte counts and no flow durations**, so every quantity the lanes consume is reconstructed (`"synthetic_hosts": true`, `"features_are_real": false`, with the derivation recorded in the metrics). Its one real discriminative signal, domain character entropy, reaches neither lane.
+   - **Detective-only:** there is no flood traffic in this dataset, and the Bouncer's contract is strictly binary, so it is skipped and the metrics say so.
+   - **Data must be obtained separately** — see `docs/experiments_guide.md` for instructions.
+   - Run command: `python scripts/run_dnsexf2021_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/dnsexf2021/detective/`
+   - Metrics: `results/experiments/dnsexf2021_metrics.json` (Detective: **not reportable**, 46,398 flows loaded)
 
 ---
 

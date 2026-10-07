@@ -1,6 +1,6 @@
 # KRONUS ML Experiments Guide
 
-Four completely independent ML experiments with separate weights, separate metrics, and separate training data.
+Five completely independent ML experiments with separate weights, separate metrics, and separate training data. Experiment E is a deliberately negative result: the pipeline runs, but the dataset is measured to be incapable of supporting a detection claim, and the metrics say so rather than quoting a score.
 
 ---
 
@@ -573,6 +573,215 @@ differ between runs are `timestamp` and `train_seconds`.
 
 ---
 
+## Experiment E — CIC-Bell-DNS-EXF-2021 External Dataset
+
+**This is a deliberately negative result.** The experiment runs end to end —
+it trains, saves, verifies, and records its metrics — but the metrics are
+marked `reportable_as_detection: false` and the run's `verdict` is
+`NO_VALID_DETECTION_METRIC`. The measured facts that force that verdict are
+below, and they were measured, not assumed.
+
+### Dataset Source
+
+| Property | Value |
+|---|---|
+| Name | CIC-Bell-DNS-EXF-2021 |
+| Publisher | Canadian Institute for Cybersecurity (CIC), University of New Brunswick |
+| Authors | Mahdavifar & Ghorbani |
+| URL | https://www.unb.ca/cic/datasets/dns-exf-2021.html |
+| Contents | 16 per-class CSVs under three directories — `benign_labeled/` (4), `heavy_attack_labeled/` (6), `light_attack_labeled/` (6) |
+| Size | ~53 MB |
+| Records | 536,138 rows before the loader's guards |
+
+`heavy_attack` and `light_attack` are both DNS exfiltration and map to the
+Detective's `lateral_movement` class; `benign` maps to `normal`.
+
+### Why This Dataset Is Worth Running Anyway
+
+It is the only dataset in this group whose *labeling methodology* is the
+finding. It fails in a way that is invisible unless you measure it, and it
+fails twice over for independent reasons. Both failures are reproducible from
+the released files by anyone, which is why the numbers below are in the
+metrics rather than in a caveat.
+
+### Data Acquisition
+
+```bash
+# Verified public mirror; every file is byte-size-checked against the release
+python scripts/download_dnsexf2021.py --from-mirror
+# or: --url <base-or-zip>   /   --from-local <zip-or-dir>
+```
+
+Without an argument the script prints manual instructions and exits 0, so a
+network it cannot reach never becomes a pipeline failure.
+
+### Failure 1 — The Labels Are Not Recoverable From The Features
+
+The label is a **capture-level** annotation: "this capture contained an
+exfiltration run" is stamped onto every row of that capture, including the
+ordinary DNS lookups the monitored machine made while the attack ran. The
+consequence, measured across all 536,138 rows:
+
+| Measurement | Value |
+|---|---|
+| Distinct feature vectors | 46,462 (91.33% of rows are exact duplicates) |
+| Vectors carrying two different KRONUS classes | 64 |
+| Rows sitting on those vectors | 390,215 — **72.78% of the corpus** |
+| Exfiltration rows on a label-ambiguous vector | 294,204 of 294,353 — **99.95%** |
+| Hard accuracy ceiling for ANY model on these features | **0.8210** |
+
+The smoking gun: the base32 exfiltration payload
+`FHEPFCELEHFCEPFFFACACACACACACABN` carries *one identical feature vector*
+under both labels. No function of those features can separate the two.
+
+The ceiling is a bound, not a model limitation. On the dataset's own three-way
+split (benign / heavy / light) it is lower still — 0.7414 — because vectors
+shared between the heavy and light corpora collide there too; merging them
+under KRONUS's single `lateral_movement` label is what lifts it to 0.8210.
+Either way it sits **below this repository's own external-dataset SLO of F1 >
+0.85**, so `slo.meets_slo` is `false` by construction, whatever a smoke test
+scores.
+
+The loader drops ambiguous vectors by default (`drop_ambiguous=True`) so the
+experiment cannot score label noise. On this dataset that removes almost the
+whole attack class:
+
+| After the ambiguity guard | Rows | Distinct signatures |
+|---|---|---|
+| `lateral_movement` | 149 | **32** |
+| `normal` | 145,774 | 46,366 |
+
+De-duplication then collapses those 149 attack rows to the 32 the experiment
+actually trains and evaluates on — against a bounded 10,000-row benign sample
+(drawn from the 46,366 available, capped to keep the run comfortable on a
+laptop). Every attack row is a signature seen exactly once. A model scoring
+1.0 there has built a 32-entry lookup table, not a detector, and this
+repository does not present that as performance.
+
+The entry floor that enforces this is in the runner:
+`MIN_REPORTABLE_MINORITY_VECTORS = 100` and `MIN_REPORTABLE_MINORITY_ROWS =
+500`. Both are missed, so `detective.reportable_as_detection` is `false` and
+`why_not_reportable` states why.
+
+### Failure 2 — None Of The Lanes' Inputs Are In The Dataset
+
+The dataset has **no IP address, no port, no byte count and no flow
+duration.** Its columns are DNS query statistics plus the queried name:
+
+```
+timestamp, FQDN_count, subdomain_length, upper, lower, numeric, entropy,
+special, labels, labels_max, labels_average, longest_word, sld, len,
+subdomain, Label
+```
+
+So every quantity the KRONUS lanes consume is reconstructed. This is disclosed
+in the metrics as `"synthetic_hosts": true` and `"features_are_real": false`,
+with the exact derivation in `synthetic_hosts_note`:
+
+| Field | Reconstruction |
+|---|---|
+| `source_ip` | A single constant monitored client (`10.30.0.1`). The dataset records no client identity, and a class-varying source would be a perfect label proxy. |
+| `dest_ip` | Deterministic synthetic IPv4 derived from the row's **real** queried domain (`sld`) — see `_dest_ip_for`. Distinct-destination counts in a window are therefore the dataset's own distinct-domain counts. |
+| `total_bytes` | Derived from the **real** query-name length (`len`) by a documented DNS packet-size formula (44 bytes overhead + name length). |
+| `duration_ms` | `0` — none is recorded, so none is invented. |
+
+Contrast with Experiments C (hosts reconstructed, features real) and D (both
+real). Here neither is real, and the one genuinely discriminating real signal
+in the file — `entropy`, the domain's character entropy — is not read by
+either lane's feature contract.
+
+### Why Only the Detective Trains
+
+There is no DoS or flood traffic anywhere in this dataset: every row is either
+benign DNS or an exfiltration channel. The Bouncer's contract is strictly
+binary (`predict_verdict` emits only `Label.FLOOD` or `Label.BENIGN`), so
+labelling exfiltration as a flood to make it train would be false. The Bouncer
+is skipped and `bouncer.skipped` records the reason.
+
+### Class Mapping (DNS-EXF-2021 → KRONUS)
+
+| Source class | KRONUS category | KRONUS label | Files |
+|---|---|---|---|
+| `benign` | `normal` | `BENIGN` | 4 |
+| `heavy_attack` | `lateral_movement` | `LATERAL_MOVEMENT` | 6 |
+| `light_attack` | `lateral_movement` | `LATERAL_MOVEMENT` | 6 |
+
+**The directory is the label.** The loader resolves each file's class from its
+parent directory, not its filename — because the released benign corpus
+contains `stateless_features-light_benign.csv`, whose name carries both
+"light" and "benign". A first-token-wins filename scan would file real benign
+traffic under an attack class. A name that contradicts itself resolves to
+nothing and falls through to the directory instead.
+
+### Train/Test Split
+
+| Property | Value |
+|---|---|
+| Method | Per-class stratified split |
+| Train ratio | 67% |
+| Seed | 42 (reproducible) |
+| Row cap | 10,000 benign rows, applied as an evenly spaced **stride**, not a prefix |
+| Leakage check | Disjoint index sets; de-duplication means no vector can appear in both splits |
+
+The stride matters for the same reason as in Experiment D: the benign corpus
+is four separate capture files, so `[:limit]` would sample one capture's
+traffic and call it the benign distribution.
+
+### Artifact Paths
+
+```
+models/experiments/dnsexf2021/detective/detective.npz
+models/experiments/dnsexf2021/detective/detective.onnx
+results/experiments/dnsexf2021_metrics.json
+```
+
+No `models/experiments/dnsexf2021/bouncer/` — that lane is deliberately not
+trained on this dataset.
+
+### Current Status
+
+```
+STATUS:   COMPLETE — but VERDICT: NO_VALID_DETECTION_METRIC
+FLOWS:    46,398 loaded (46,366 normal / 32 lateral_movement), from 536,138 raw rows
+BOUNCER:  deliberately skipped (no flood traffic exists in this dataset)
+```
+
+| Metric | Detective (lateral_movement vs benign) |
+|---|---|
+| Accuracy | 1.0000 — **not reportable** |
+| Precision | 1.0000 — **not reportable** |
+| Recall | 1.0000 — **not reportable** |
+| F1 | **1.0000 — NOT a detection result** |
+| Train seconds | 0.83 |
+| Train / test windows | 68 / 34 |
+| Uncertain verdicts | 0 |
+| Reportable as detection | **false** |
+
+Confusion matrix over the model's full `RAW_CLASSES`
+(`[benign, port_scan, lateral_movement]`):
+
+```
+[[33,  0, 0],
+ [ 0,  0, 0],
+ [ 0,  0, 1]]
+```
+
+Read this matrix with the numbers above in hand. Exactly **one** test window
+carries `lateral_movement`, and it is classified correctly; 33 benign windows
+are classified benign. That is the whole evaluation. A perfect score over 34
+windows with one positive example is not evidence of detection — which is why
+the runner prints the ceiling, the SLO and the non-reportable F1 alongside it
+rather than the F1 alone. `port_scan` has no representatives here and was
+never predicted.
+
+Weight load verification: Detective **PASSED** (verdict `lateral_movement`,
+conf 1.000). Bouncer: **not trained on this dataset**.
+
+Reproducibility: re-running reproduces these figures. The only fields that
+differ between runs are `timestamp` and `train_seconds`.
+
+---
+
 ## What Was Removed
 
 A previous iteration of this repository included a second experiment ("API-data experiment") that used **synthetically generated network telemetry** (generated benign/flood/port-scan events, not real data). That experiment has been completely removed because:
@@ -596,20 +805,27 @@ A previous iteration of this repository included a second experiment ("API-data 
 
 ## Summary Comparison
 
-| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) |
-|---|---|---|---|---|
-| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC |
-| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) |
-| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) |
-| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** |
-| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** |
-| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows |
-| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained |
-| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** |
-| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` |
-| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` |
-| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a |
-| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` |
+| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) | Experiment E (DNS-EXF2021) |
+|---|---|---|---|---|---|
+| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC | CIC-Bell-DNS-EXF-2021 from UNB/CIC |
+| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) | External capture (2021, DNS exfiltration) |
+| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) | **Detective only** (no flood class exists) |
+| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** | DNS exfiltration → **lateral_movement** |
+| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** | Reconstructed (**no IPs, ports, bytes or durations in source**) |
+| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows | 46,398 flows (from 536,138 rows; 99.95% of attack rows are label-ambiguous and dropped) |
+| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained | not trained |
+| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** | **not reportable** — see below |
+| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` | `models/experiments/dnsexf2021/` |
+| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` | `results/experiments/dnsexf2021_metrics.json` |
+| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a | Detective PASSED · Bouncer n/a |
+| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` | `python scripts/run_dnsexf2021_experiment.py` |
+
+Experiment E is the only entry here whose Detective F1 is withheld. Its
+trained score is 1.0000, but the dataset's label-ambiguity ceiling is 0.8210
+and the ambiguity guard leaves 32 attack signatures across 32 rows, so the
+score measures a lookup table rather than detection. The runner records it as
+`reportable_as_detection: false` with `verdict: NO_VALID_DETECTION_METRIC`
+instead of quoting it as a result.
 
 ---
 
@@ -646,6 +862,20 @@ python scripts/run_dohbrw2020_experiment.py
 rm -rf data/external/dohbrw2020
 ```
 
+### Experiment E
+```bash
+# Fetch the sixteen per-class CSVs (~53 MB), byte-size-verified against the release
+python scripts/download_dnsexf2021.py --from-mirror
+python scripts/run_dnsexf2021_experiment.py
+# Reclaim the space when done:
+rm -rf data/external/dnsexf2021
+```
+
+Expect `VERDICT: NO_VALID_DETECTION_METRIC` and a printed F1 near 1.0 that is
+explicitly marked non-reportable. That output is the intended result — see the
+Experiment E section above. If the runner instead reports a valid detection
+metric, the data is not what the loader was written against.
+
 ### Recorded Seeds
 
 | Experiment | Component | Seed |
@@ -660,3 +890,5 @@ rm -rf data/external/dohbrw2020
 | Split (UNSW) | All | 42 (per-class, stratified) |
 | DoHBrw2020 | Detective | 42 |
 | Split (DoHBrw) | All | 42 (per-class, stratified) |
+| DNS-EXF2021 | Detective | 42 |
+| Split (DNS-EXF) | All | 42 (per-class, stratified) |

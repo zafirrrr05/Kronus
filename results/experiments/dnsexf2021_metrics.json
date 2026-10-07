@@ -1,0 +1,134 @@
+{
+  "experiment": "dnsexf2021",
+  "status": "COMPLETE",
+  "verdict": "NO_VALID_DETECTION_METRIC",
+  "finding": "This dataset cannot support a detection claim, and the metrics below say so rather than quoting a number. Measured: 72.78% of all rows sit on a feature vector that carries two different labels, including 99.95% of the exfiltration rows. Removing those leaves the attack class with 149 rows carrying only 32 distinct signatures, against 46,366 distinct signatures of benign traffic; after de-duplication the experiment trains and evaluates on 32 attack rows against a bounded 10,000-row benign sample. The trained pipeline's score is recorded below and explicitly marked non-reportable: on a 32-signature minority class it measures a lookup table, not detection. The hard bound for any model on the full corpus is 0.821, which is below the repository's own external-dataset SLO of 0.85.",
+  "timestamp": "2026-10-07T10:08:55.327528+00:00",
+  "notes": "Detective-only experiment, and a deliberately negative result. The dataset's labels are capture-level and not recoverable from its features, and it carries no IPs, ports, bytes or durations \u2014 so every input the lanes consume is reconstructed. No valid detection metric can be produced; see `finding` and `label_quality` for the measurements behind that, and `detective.reportable_as_detection` for the pipeline output's status. The Bouncer is skipped: this dataset has no flood traffic to train its binary contract on.",
+  "dataset": {
+    "source": "CIC-Bell-DNS-EXF-2021 (Canadian Institute for Cybersecurity, UNB)",
+    "url": "https://www.unb.ca/cic/datasets/dns-exf-2021.html",
+    "total_flows": 46398,
+    "total_flows_before_guard": 536138,
+    "category_distribution": {
+      "normal": 46366,
+      "lateral_movement": 32
+    },
+    "synthetic_hosts": true,
+    "synthetic_hosts_note": "The dataset carries no IP address, no port, no byte count and no flow duration, so all four are reconstructed: source_ip is a single constant monitored client (the dataset records no client identity, and a class-varying source would be a label proxy); dest_ip is a deterministic synthetic IPv4 derived from the row's REAL queried domain (`sld`), so distinct-destination counts in a window are the dataset's own distinct-domain counts; total_bytes is derived from the REAL query-name length (`len`) via a documented DNS packet-size formula; duration_ms is 0 because no duration is recorded. dest_port=53 and protocol=UDP are the dataset's subject matter, not invented measurements.",
+    "features_are_real": false,
+    "features_are_real_note": "The DNS query statistics are real. `total_bytes` is derived from the real query-name length, and every other quantity the lanes consume is reconstructed \u2014 see synthetic_hosts_note."
+  },
+  "label_quality": {
+    "rows": 536138,
+    "rows_with_known_category": 536138,
+    "distinct_feature_vectors": 46462,
+    "duplicate_row_fraction": 0.9133,
+    "ambiguous_vectors": 64,
+    "rows_in_ambiguous_vectors": 390215,
+    "ambiguous_row_fraction": 0.7278,
+    "deterministic_ceiling": 0.821,
+    "n_files": 16,
+    "rows_per_category": {
+      "lateral_movement": 294353,
+      "normal": 241785
+    },
+    "distinct_feature_vectors_by_category": {
+      "lateral_movement": 96,
+      "normal": 46430
+    },
+    "distinct_vectors_after_guard_by_category": {
+      "lateral_movement": 32,
+      "normal": 46366
+    },
+    "rows_after_guard_by_category": {
+      "normal": 145774,
+      "lateral_movement": 149
+    },
+    "ambiguous_row_fraction_by_category": {
+      "lateral_movement": 0.9995,
+      "normal": 0.3971
+    }
+  },
+  "label_quality_note": "All values are measured from the downloaded files, not assumed. `deterministic_ceiling` is a hard upper bound on accuracy for ANY model reading this dataset's features: where one feature vector carries two classes, no function of those features can be right on more than the majority count. It is computed on the RAW corpus, so it stays an honest bound on the source rather than on the guarded subset.",
+  "slo": {
+    "target_f1": 0.85,
+    "measured_f1": 1.0,
+    "ceiling": 0.821,
+    "target_reachable": false,
+    "meets_slo": false,
+    "note": "The repository's external-dataset SLO (F1 > 0.85) is unreachable on this dataset by construction, because the measured ceiling is below it. `meets_slo` is therefore False however the smoke test scores."
+  },
+  "bouncer": {
+    "component": "bouncer",
+    "training_origin": "dnsexf2021",
+    "skipped": "DNS-EXF2021 contains no DoS/flood traffic \u2014 every row is either benign DNS or an exfiltration channel. The Bouncer's contract is strictly binary flood-vs-benign (predict_verdict emits only Label.FLOOD or Label.BENIGN), so training it here would require labelling exfiltration as a flood, which is false. Skipped deliberately; the Detective's lateral_movement class is what this dataset can exercise.",
+    "n_flood_rows": 0,
+    "n_rows_considered": 46398,
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "training_origin": "dnsexf2021",
+    "dataset_source": "CIC-Bell-DNS-EXF-2021 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/dns-exf-2021.html",
+    "model_type": "GAT in autograd (trained from scratch)",
+    "task": "macro benign vs lateral_movement graph window classification",
+    "synthetic_hosts": true,
+    "synthetic_hosts_note": "The dataset carries no IP address, no port, no byte count and no flow duration, so all four are reconstructed: source_ip is a single constant monitored client (the dataset records no client identity, and a class-varying source would be a label proxy); dest_ip is a deterministic synthetic IPv4 derived from the row's REAL queried domain (`sld`), so distinct-destination counts in a window are the dataset's own distinct-domain counts; total_bytes is derived from the REAL query-name length (`len`) via a documented DNS packet-size formula; duration_ms is 0 because no duration is recorded. dest_port=53 and protocol=UDP are the dataset's subject matter, not invented measurements.",
+    "seed": 42,
+    "train_ratio": 0.67,
+    "n_train_benign": 6700,
+    "n_train_tunnel": 21,
+    "n_test_benign": 3300,
+    "n_test_tunnel": 11,
+    "train_windows": 68,
+    "test_windows": 34,
+    "n_uncertain_verdicts": 0,
+    "train_seconds": 0.83,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "confusion_matrix": [
+      [
+        33,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "port_scan",
+      "lateral_movement"
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/dnsexf2021/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/models/experiments/dnsexf2021/detective/detective.onnx"
+    ],
+    "reportable_as_detection": false,
+    "why_not_reportable": "The attack class retains only 32 distinct feature signatures / 149 rows after removing label-ambiguous vectors, below the 100-signature / 500-row floor this repository requires before quoting a detection metric. The numbers in this block are a pipeline smoke test: they confirm the model trains, saves and loads, and they must NOT be cited as detection performance."
+  },
+  "weight_verification": {
+    "dnsexf2021_bouncer_loadable": null,
+    "dnsexf2021_bouncer_note": "not trained on this dataset \u2014 see bouncer.skipped",
+    "dnsexf2021_detective_loadable": true
+  }
+}
