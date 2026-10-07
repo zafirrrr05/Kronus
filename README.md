@@ -85,7 +85,7 @@ For full details on the independent ML experiments, data provenance, and benchma
 
 ## ML Experiments
 
-KRONUS provides three completely independent ML experiment pipelines with separate weights and metrics:
+KRONUS provides four completely independent ML experiment pipelines with separate weights and metrics:
 
 1. **Experiment A — Repo Data (NSL-KDD):**
    - Trains Bouncer and Detective independently using the NSL-KDD dataset already in the repository (`data/real/`).
@@ -109,6 +109,15 @@ KRONUS provides three completely independent ML experiment pipelines with separa
    - Trained weights: `models/experiments/unsw_nb15/bouncer/`, `models/experiments/unsw_nb15/detective/`
    - Metrics: `results/experiments/unsw_nb15_metrics.json` (Bouncer F1: 0.9963, Detective F1: 1.0000, 257,673 flows)
    - **Honest disclosure:** the author-supplied pre-split CSVs carry no IP addresses, so hosts are reconstructed deterministically from each row's own connection-rate counters. Flow *features* are real; graph *topology* is reconstructed (`"synthetic_hosts": true` in the metrics).
+
+4. **Experiment D — CIRA-CIC-DoHBrw-2020 (External Dataset):**
+   - Trains the KRONUS **Detective** on DoH tunnel detection using the [CIRA-CIC-DoHBrw-2020](https://www.unb.ca/cic/datasets/dohbrw-2020.html) capture from the Canadian Institute for Cybersecurity, UNB.
+   - **Detective-only, by design:** this dataset carries no DoS/flood traffic (every flow is benign DoH or a DNS tunnel), and the Bouncer's contract is strictly binary flood-vs-benign. Labelling tunnels as floods to make it train would be false, so the Bouncer is skipped and the metrics say so explicitly. This is the first experiment exercising the Detective's third class, `lateral_movement`.
+   - **No reconstruction:** unlike Experiments A and C, this capture ships real IPs and real ports, so graph topology is the capture's own (`"synthetic_hosts": false`).
+   - **Data must be obtained separately** — see `docs/experiments_guide.md` for instructions.
+   - Run command: `python scripts/run_dohbrw2020_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/dohbrw2020/detective/`
+   - Metrics: `results/experiments/dohbrw2020_metrics.json` (Detective F1: 0.9697, 60,000 flows)
 
 ---
 

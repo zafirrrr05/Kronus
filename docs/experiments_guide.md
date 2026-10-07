@@ -1,6 +1,6 @@
 # KRONUS ML Experiments Guide
 
-Two completely independent ML experiments with separate weights, separate metrics, and separate training data.
+Four completely independent ML experiments with separate weights, separate metrics, and separate training data.
 
 ---
 
@@ -359,6 +359,220 @@ confidences.
 
 ---
 
+## Experiment D — CIRA-CIC-DoHBrw-2020 External Dataset
+
+### Dataset Source
+
+**CIRA-CIC-DoHBrw-2020** — the DoH / DoH-tunnel capture from the Canadian
+Institute for Cybersecurity, University of New Brunswick.
+
+- **Official page:** https://www.unb.ca/cic/datasets/dohbrw-2020.html
+- **Files used:** the four per-class CSVs `Benign-DoH.csv`, `DNSCat2-DoH.csv`,
+  `dns2tcp-DoH.csv`, `iodine-DoH.csv`
+- **Citation:**
+  > Mohammadreza MontazeriShatoori, Logan Davidson, Gaya Dharmawansa,
+  > Arash Habibi Lashkari, "Detection of DoH Tunnels using Time-series
+  > Classification of Encrypted Traffic", 5th IEEE Cyber Science and
+  > Technology Congress (CyberSciTech), 2020.
+
+### Why DoHBrw2020?
+
+This is the first external dataset here whose ground truth is neither
+volumetric nor scanning: it is **tunnelling**. DNS-over-HTTPS tunnels
+(dnscat2, dns2tcp, iodine) carry command-and-control and exfiltration traffic
+that looks, at the packet level, like ordinary HTTPS to a public resolver.
+It is also the first dataset to exercise the Detective's third class,
+`lateral_movement` — Experiments B and C only ever reached `port_scan`.
+
+### Data Acquisition
+
+The officially-published direct links for this dataset are **dead, and they
+fail in the worst possible way**: every one of them still answers HTTP 200,
+with `Content-Type: text/html` and `content-length: 108784`, serving the UNB
+"CIC | Datasets" web page. Verified, not assumed:
+
+```
+http://205.174.165.80/CICDataset/DoHBrw-2020/Dataset/BenignDoH-NonDoH-CSVs.zip
+http://205.174.165.80/CICDataset/DoHBrw-2020/Dataset/MaliciousDoH-CSVs.zip
+http://205.174.165.80/CICDataset/DoHBrw-2020/Dataset/Total-CSVs.zip
+  -> all three: status 200, Content-Type: text/html, 108784 bytes
+```
+
+A downloader that trusted the status code would save 108 KB of HTML as a
+named `.zip` and report success. The downloader therefore byte-checks every
+file against its known size **and** requires the first line to be a real
+header (`SourceIP`/`DestinationIP`/`Duration`), which no HTML error page is.
+
+```bash
+python scripts/download_dohbrw2020.py --from-mirror
+# or: --url <base-or-zip>   /   --from-local <zip-or-dir>
+python scripts/run_dohbrw2020_experiment.py
+```
+
+The four files total ~165 MB and are needed only while the experiment runs;
+delete `data/external/dohbrw2020/` afterwards.
+
+### Why Only the Detective Trains Here
+
+KRONUS's two lanes have fixed contracts, and this dataset only fits one.
+
+The **Bouncer is strictly binary flood-vs-benign**: `predict_verdict` can
+emit only `Label.FLOOD` or `Label.BENIGN`, and its six features are
+volumetric. This dataset contains **no DoS/flood traffic at all** — every
+capture is either benign DoH or a DNS tunnel. A tunnel is not a flood.
+Training the Bouncer here would mean labelling tunnel rows `flood`, which is
+false and would corrupt what the model means. So the Bouncer is **not
+trained**, and `dohbrw2020_metrics.json` records that as an explicit
+`bouncer.skipped` with its reason — not as an empty section.
+
+The **Detective's** contract fits exactly: `RAW_CLASSES` is already
+`[benign, port_scan, lateral_movement]`, and a tunnelled / exfiltrating flow
+is precisely `lateral_movement`.
+
+### What Is NOT Done
+
+This experiment does **NOT**:
+- Train the Bouncer on a task it cannot honestly represent (see above)
+- Generate synthetic traffic to substitute for real DoHBrw2020 data
+- Rename or copy another dataset as "DoHBrw2020"
+- Fabricate any metrics
+
+### No Host Reconstruction (contrast with Experiments A and C)
+
+This capture carries **real source/destination IPs, real ports, and a real
+capture clock**, so nothing is synthesized. Graph topology here is the
+capture's own — internal hosts (`192.168.20.x`) reaching public resolvers
+(`8.8.8.8`, `1.1.1.1`, `9.9.9.11`, `176.103.130.x`). The metrics record
+`"synthetic_hosts": false`.
+
+Two details of the real data are preserved rather than normalised away:
+
+- **Flow direction is left as recorded.** The iodine capture contains flows
+  whose 443 endpoint is the *source* (server → client). The loader does not
+  flip them.
+- **Rows are replayed in the dataset's true chronological order** — the
+  loader sorts by the capture's own `TimeStamp`. The absolute clock is not
+  carried into the model: `NSLKDDRow` has no timestamp slot, and putting the
+  capture epoch into `features` would leak the label outright (the benign
+  capture is December 2019; the tunnel captures are March 2020, so a
+  timestamp column would separate the classes by itself). Replay therefore
+  uses the same synthetic clock as the other external experiments; only the
+  *sequence* is the dataset's.
+
+### Class Mapping (DoHBrw2020 → KRONUS)
+
+The class comes from the **filename**, not the label column — and that is a
+real trap, not a stylistic choice. The benign file's trailing column is
+`Label` holding `"Benign"`, but each tunnel file's trailing column is `DoH`
+holding `"True"`, which asserts only "this flow is DoH" and is true of every
+row in the file, so it names no class at all.
+
+| File | KRONUS category | KRONUS label |
+|---|---|---|
+| `Benign-DoH.csv` (benign DoH) | `normal` | `benign` |
+| `DNSCat2-DoH.csv` (dnscat2 tunnel) | `lateral_movement` | `lateral_movement` |
+| `dns2tcp-DoH.csv` (dns2tcp tunnel) | `lateral_movement` | `lateral_movement` |
+| `iodine-DoH.csv` (iodine tunnel) | `lateral_movement` | `lateral_movement` |
+
+`lateral_movement` is the KRONUS label for tunnelled/exfiltrating traffic: a
+DNS tunnel is a host moving data out through an established channel, not a
+volumetric flood.
+
+The mirror's aggregate `Malicious-DoH.csv` **deliberately resolves to
+nothing**: it does not say which tool produced a given flow, and the loader
+will not invent that. An unresolvable file contributes no rows to training,
+and is kept with a NaN `category` in the DataFrame view so the drop is
+visible rather than silent.
+
+### Feature Mapping (DoHBrw2020 → KRONUS)
+
+```
+DoHBrw2020 flow row
+  → services/telemetry_exporter/converters.flow_row_to_event()
+  → services/bouncer/features.FlowFeaturizer.features_for()
+  → KRONUS features
+```
+
+The identical production telemetry pipeline used in every other experiment —
+the loader emits the shared `NSLKDDRow` shape, so no DoHBrw-specific feature
+code exists. `Duration` is recorded in **seconds** and converted to
+milliseconds; `total_bytes` is `FlowBytesSent + FlowBytesReceived`. The
+dataset carries no protocol column, so the transport is **derived** from the
+well-known port on either endpoint (443/8443/80/8080 → TCP, 53/5353 → UDP,
+otherwise `other`).
+
+### Train/Test Split
+
+| Property | Value |
+|---|---|
+| Method | Per-class stratified split |
+| Train ratio | 67% |
+| Seed | 42 (reproducible) |
+| Row cap | 15,000 rows read per CSV, 10,000 rows per class |
+| Leakage check | Disjoint index sets — verified structurally |
+
+The row cap is applied as an evenly spaced **stride**, not a prefix. That
+matters here: the `lateral_movement` class is three separate captures
+concatenated in file order, so `[:limit]` would hand back one tool's traffic
+and call it "tunnel traffic". A stride spans every source file and each
+capture's full timeline, and it is deterministic, so the experiment
+reproduces exactly.
+
+### Artifact Paths
+
+```
+models/experiments/dohbrw2020/detective/detective.npz
+models/experiments/dohbrw2020/detective/detective.onnx
+results/experiments/dohbrw2020_metrics.json
+```
+
+No `models/experiments/dohbrw2020/bouncer/` — that lane is deliberately not
+trained on this dataset.
+
+### Current Status
+
+```
+STATUS: COMPLETE (Detective); Bouncer deliberately skipped
+FLOWS:  60,000 loaded (15,000 normal / 45,000 lateral_movement)
+```
+
+| Metric | Detective (lateral_movement vs benign) |
+|---|---|
+| Accuracy | 0.9697 |
+| Precision | 0.9697 |
+| Recall | 0.9697 |
+| F1 | **0.9697** |
+| Train seconds | 1.147 |
+| Train / test windows | 134 / 66 |
+| Uncertain verdicts | 1 |
+
+Confusion matrix over the model's full `RAW_CLASSES`
+(`[benign, port_scan, lateral_movement]`):
+
+```
+[[32,  0,  1],
+ [ 0,  0,  0],
+ [ 1,  0, 32]]
+```
+
+`port_scan` has no representatives in this dataset, so it is never a training
+target — but it *can* still be predicted, so it is kept as a visible column
+rather than dropped from the matrix. It was never predicted here. Two of 66
+test windows were misclassified, one in each direction.
+
+As in Experiments B and C, a verdict landing in the gray zone counts toward
+the attack class; the count is reported (`n_uncertain_verdicts: 1`) so the
+effect is visible rather than buried.
+
+Weight load verification: Detective **PASSED** (verdict `lateral_movement`,
+conf 1.000). Bouncer: **not trained on this dataset**.
+
+Reproducibility: re-running reproduces these figures exactly — identical F1,
+identical window counts, identical confusion matrix. The only fields that
+differ between runs are `timestamp` and `train_seconds`.
+
+---
+
 ## What Was Removed
 
 A previous iteration of this repository included a second experiment ("API-data experiment") that used **synthetically generated network telemetry** (generated benign/flood/port-scan events, not real data). That experiment has been completely removed because:
@@ -382,17 +596,20 @@ A previous iteration of this repository included a second experiment ("API-data 
 
 ## Summary Comparison
 
-| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) |
-|---|---|---|---|
-| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra |
-| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) |
-| Records | 125,973 train | 2,828,563 flows | 257,673 flows |
-| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** |
-| Detective F1 | **1.0000** | **0.9846** | **1.0000** |
-| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` |
-| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` |
-| Weight load | PASSED | PASSED | PASSED |
-| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` |
+| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) |
+|---|---|---|---|---|
+| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC |
+| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) |
+| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) |
+| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** |
+| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** |
+| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows |
+| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained |
+| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** |
+| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` |
+| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` |
+| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a |
+| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` |
 
 ---
 
@@ -420,6 +637,15 @@ python scripts/download_unsw_nb15.py --from-mirror
 python scripts/run_unsw_nb15_experiment.py
 ```
 
+### Experiment D
+```bash
+# Fetch the four per-class CSVs (~165 MB)
+python scripts/download_dohbrw2020.py --from-mirror
+python scripts/run_dohbrw2020_experiment.py
+# Reclaim the space when done:
+rm -rf data/external/dohbrw2020
+```
+
 ### Recorded Seeds
 
 | Experiment | Component | Seed |
@@ -432,3 +658,5 @@ python scripts/run_unsw_nb15_experiment.py
 | UNSW-NB15 | Bouncer | 42 |
 | UNSW-NB15 | Detective | 42 |
 | Split (UNSW) | All | 42 (per-class, stratified) |
+| DoHBrw2020 | Detective | 42 |
+| Split (DoHBrw) | All | 42 (per-class, stratified) |

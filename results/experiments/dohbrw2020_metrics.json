@@ -1,0 +1,87 @@
+{
+  "experiment": "dohbrw2020",
+  "status": "COMPLETE",
+  "timestamp": "2026-10-07T06:33:27.454104+00:00",
+  "notes": "Detective-only experiment by design: DoHBrw2020 has no DoS/flood class, so the Bouncer's binary flood-vs-benign contract cannot be honestly trained here. See bouncer.skipped.",
+  "dataset": {
+    "source": "CIRA-CIC-DoHBrw-2020 (Canadian Institute for Cybersecurity, UNB)",
+    "url": "https://www.unb.ca/cic/datasets/dohbrw-2020.html",
+    "total_flows": 60000,
+    "category_distribution": {
+      "normal": 15000,
+      "lateral_movement": 45000
+    },
+    "synthetic_hosts": false,
+    "synthetic_hosts_note": "No reconstruction: this capture carries real source/destination IPs and real ports, so graph topology is the capture's own. Rows are replayed in the dataset's true chronological order.",
+    "features_are_real": true
+  },
+  "bouncer": {
+    "component": "bouncer",
+    "training_origin": "dohbrw2020",
+    "skipped": "DoHBrw2020 contains no DoS/flood traffic \u2014 every flow is benign DoH or a DNS tunnel. The Bouncer's contract is strictly binary flood-vs-benign (predict_verdict emits only Label.FLOOD or Label.BENIGN), so training it here would require labelling tunnels as floods, which is false. Skipped deliberately; this experiment exercises the Detective's lateral_movement class instead.",
+    "n_flood_rows": 0,
+    "n_rows_considered": 60000,
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "training_origin": "dohbrw2020",
+    "dataset_source": "CIRA-CIC-DoHBrw-2020 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/dohbrw-2020.html",
+    "model_type": "GAT in autograd (trained from scratch)",
+    "task": "macro benign vs lateral_movement graph window classification",
+    "synthetic_hosts": false,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "n_train_benign": 6700,
+    "n_train_tunnel": 6700,
+    "n_test_benign": 3300,
+    "n_test_tunnel": 3300,
+    "train_windows": 134,
+    "test_windows": 66,
+    "n_uncertain_verdicts": 1,
+    "train_seconds": 1.147,
+    "accuracy": 0.9697,
+    "precision": 0.9697,
+    "recall": 0.9697,
+    "f1": 0.9697,
+    "confusion_matrix": [
+      [
+        32,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        32
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "port_scan",
+      "lateral_movement"
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/dohbrw2020/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/models/experiments/dohbrw2020/detective/detective.onnx"
+    ]
+  },
+  "weight_verification": {
+    "dohbrw2020_bouncer_loadable": null,
+    "dohbrw2020_bouncer_note": "not trained on this dataset \u2014 see bouncer.skipped",
+    "dohbrw2020_detective_loadable": true
+  }
+}
