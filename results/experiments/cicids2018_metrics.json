@@ -1,0 +1,549 @@
+{
+  "experiment": "cicids2018",
+  "status": "COMPLETE",
+  "verdict": "BOUNCER_REPORTABLE_DETECTIVE_BELOW_SLO",
+  "timestamp": "2026-10-07T13:00:48.713235+00:00",
+  "elapsed_seconds": 171.95,
+  "dataset": {
+    "source": "CSE-CIC-IDS2018 (Canadian Institute for Cybersecurity, UNB)",
+    "url": "https://www.unb.ca/cic/datasets/ids-2018.html",
+    "day_files": {
+      "Friday-16-02-2018": "Friday-16-02-2018_TrafficForML_CICFlowMeter.csv",
+      "Wednesday-21-02-2018": "Wednesday-21-02-2018_TrafficForML_CICFlowMeter.csv",
+      "Wednesday-28-02-2018": "Wednesday-28-02-2018_TrafficForML_CICFlowMeter.csv",
+      "Thursday-01-03-2018": "Thursday-01-03-2018_TrafficForML_CICFlowMeter.csv"
+    },
+    "roles": {
+      "bouncer_flood": [
+        "Friday-16-02-2018",
+        "Wednesday-21-02-2018"
+      ],
+      "bouncer_benign": [
+        "Wednesday-28-02-2018",
+        "Thursday-01-03-2018"
+      ],
+      "detective": [
+        "Wednesday-28-02-2018",
+        "Thursday-01-03-2018"
+      ]
+    },
+    "stride": 20,
+    "detective_stride": 1,
+    "synthetic_hosts": true,
+    "synthetic_hosts_note": "The ML-ready CSVs carry no Source IP, Destination IP or Source Port column. source_ip is one reconstructed constant; dest_ip is a deterministic bijection of the REAL destination port, so the graph measures service fan-out, not host fan-out, and the edge features port_entropy and flow_count are constant by construction. source_port is None. Flow measurements \u2014 bytes, durations, ports, protocol, timestamps and all 74 CICFlowMeter columns \u2014 are real, and unlike Experiments A-E the capture clock is real too, so windows are true 2-second slices rather than synthetic row spacing.",
+    "label_mapping": {
+      "Benign": "normal (Label.BENIGN)",
+      "DoS attacks-*": "dos (Label.FLOOD) \u2014 Hulk, SlowHTTPTest, GoldenEye, Slowloris",
+      "DDOS attack-*": "dos (Label.FLOOD) \u2014 HOIC, LOIC-HTTP",
+      "Infilteration": "probe (Label.PORT_SCAN) \u2014 Nmap sweep + full port scan",
+      "_dropped": "brute force, web attacks, SQL injection, bot, and the streaming day: no KRONUS counterpart in this capture"
+    }
+  },
+  "window_survey": {
+    "Wednesday-28-02-2018": {
+      "rows_loaded": 613071,
+      "attack_intervals": 2,
+      "attack_span_hours": 2.219,
+      "windows_at_production_cadence": 16344,
+      "attack_windows": 3948,
+      "benign_windows": 12396,
+      "windows_kept_for_training": {
+        "attack": 3948,
+        "benign": 4250
+      }
+    },
+    "Thursday-01-03-2018": {
+      "rows_loaded": 331100,
+      "attack_intervals": 3,
+      "attack_span_hours": 2.586,
+      "windows_at_production_cadence": 16433,
+      "attack_windows": 4594,
+      "benign_windows": 11839,
+      "windows_kept_for_training": {
+        "attack": 4250,
+        "benign": 4250
+      }
+    }
+  },
+  "bouncer": {
+    "n_train": 61224,
+    "n_test": 30158,
+    "n_train_flood": 40200,
+    "n_train_benign": 21024,
+    "n_test_flood": 19800,
+    "n_test_benign": 10358,
+    "train_seconds": 0.165,
+    "accuracy": 0.9902,
+    "precision": 0.9994,
+    "recall": 0.9857,
+    "f1": 0.9925,
+    "auc": 0.9994,
+    "confusion_matrix": [
+      [
+        10347,
+        11
+      ],
+      [
+        284,
+        19516
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "flood"
+    ],
+    "feature_medians": {
+      "event_rate": {
+        "flood": 44.0,
+        "benign": 1.5
+      },
+      "byte_rate": {
+        "flood": 1967.5,
+        "benign": 1440.0
+      },
+      "dest_port_entropy": {
+        "flood": 0.0,
+        "benign": 1.0
+      },
+      "unique_dest_count": {
+        "flood": 1.0,
+        "benign": 2.0
+      },
+      "avg_duration_ms": {
+        "flood": 12.3828,
+        "benign": 2505.7
+      },
+      "same_dest_ratio": {
+        "flood": 1.0,
+        "benign": 0.5
+      }
+    },
+    "component": "bouncer",
+    "training_origin": "cicids2018",
+    "dataset_source": "CSE-CIC-IDS2018 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/ids-2018.html",
+    "model_type": "XGBoost + Temperature Scaling (trained from scratch)",
+    "task": "binary DoS/DDoS flood vs benign classification",
+    "synthetic_hosts": true,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "stride": 20,
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "cross_day": [
+      {
+        "trained_on": {
+          "flood": "Friday-16-02-2018",
+          "benign": "Wednesday-28-02-2018"
+        },
+        "tested_on": {
+          "flood": [
+            "Wednesday-21-02-2018"
+          ],
+          "benign": [
+            "Thursday-01-03-2018"
+          ]
+        },
+        "n_train": 51015,
+        "n_test": 40254,
+        "f1": 0.9985,
+        "auc": 0.9995,
+        "confusion_matrix": [
+          [
+            10254,
+            0
+          ],
+          [
+            90,
+            29910
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      },
+      {
+        "trained_on": {
+          "flood": "Friday-16-02-2018",
+          "benign": "Thursday-01-03-2018"
+        },
+        "tested_on": {
+          "flood": [
+            "Wednesday-21-02-2018"
+          ],
+          "benign": [
+            "Wednesday-28-02-2018"
+          ]
+        },
+        "n_train": 40254,
+        "n_test": 51015,
+        "f1": 0.9977,
+        "auc": 0.9993,
+        "confusion_matrix": [
+          [
+            20959,
+            56
+          ],
+          [
+            84,
+            29916
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      },
+      {
+        "trained_on": {
+          "flood": "Wednesday-21-02-2018",
+          "benign": "Wednesday-28-02-2018"
+        },
+        "tested_on": {
+          "flood": [
+            "Friday-16-02-2018"
+          ],
+          "benign": [
+            "Thursday-01-03-2018"
+          ]
+        },
+        "n_train": 51015,
+        "n_test": 40254,
+        "f1": 0.8684,
+        "auc": 0.9883,
+        "confusion_matrix": [
+          [
+            10253,
+            1
+          ],
+          [
+            6978,
+            23022
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      },
+      {
+        "trained_on": {
+          "flood": "Wednesday-21-02-2018",
+          "benign": "Thursday-01-03-2018"
+        },
+        "tested_on": {
+          "flood": [
+            "Friday-16-02-2018"
+          ],
+          "benign": [
+            "Wednesday-28-02-2018"
+          ]
+        },
+        "n_train": 40254,
+        "n_test": 51015,
+        "f1": 0.8681,
+        "auc": 0.9925,
+        "confusion_matrix": [
+          [
+            20992,
+            23
+          ],
+          [
+            6972,
+            23028
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      }
+    ],
+    "day_survey": {
+      "Friday-16-02-2018": {
+        "rows_loaded": 52429,
+        "flood_rows": 30000,
+        "benign_rows_outside_attack": 16,
+        "benign_rows_held_out_inside_attack": 22313,
+        "attack_intervals": 2,
+        "attack_span_hours": 0.823,
+        "raw_labels": {
+          "DoS attacks-Hulk": 23107,
+          "Benign": 22329,
+          "DoS attacks-SlowHTTPTest": 6993
+        }
+      },
+      "Wednesday-21-02-2018": {
+        "rows_loaded": 52429,
+        "flood_rows": 30000,
+        "benign_rows_outside_attack": 97,
+        "benign_rows_held_out_inside_attack": 18136,
+        "attack_intervals": 83,
+        "attack_span_hours": 0.519,
+        "raw_labels": {
+          "DDOS attack-HOIC": 34108,
+          "Benign": 18233,
+          "DDOS attack-LOIC-UDP": 88
+        }
+      },
+      "Wednesday-28-02-2018": {
+        "rows_loaded": 30654,
+        "flood_rows": 0,
+        "benign_rows_outside_attack": 21015,
+        "benign_rows_held_out_inside_attack": 6191,
+        "attack_intervals": 368,
+        "attack_span_hours": 1.695,
+        "raw_labels": {
+          "Benign": 27206,
+          "Infilteration": 3448
+        }
+      },
+      "Thursday-01-03-2018": {
+        "rows_loaded": 16555,
+        "flood_rows": 0,
+        "benign_rows_outside_attack": 10254,
+        "benign_rows_held_out_inside_attack": 1648,
+        "attack_intervals": 366,
+        "attack_span_hours": 2.31,
+        "raw_labels": {
+          "Benign": 11902,
+          "Infilteration": 4653
+        }
+      }
+    },
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/cicids2018/bouncer/bouncer.json",
+      "/Users/manavjobanputra/kronos/models/experiments/cicids2018/bouncer/calibration.json"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "training_origin": "cicids2018",
+    "dataset_source": "CSE-CIC-IDS2018 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/ids-2018.html",
+    "model_type": "GAT in autograd (trained from scratch)",
+    "task": "macro benign vs port_scan graph-window classification",
+    "synthetic_hosts": true,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "window_seconds": 2.0,
+    "window_label_rule": "window_start inside an attack interval (widened by a 3s guard); a window is never relabelled by row majority, because a mixed window is the slice the detector is asked about",
+    "epochs": 4,
+    "batch_size": 16,
+    "train_windows": 11187,
+    "test_windows": 5511,
+    "n_train_probe": 5492,
+    "n_train_benign": 5695,
+    "n_test_probe": 2706,
+    "n_test_benign": 2805,
+    "train_seconds": 89.733,
+    "accuracy": 0.5075,
+    "precision": 0.4717,
+    "recall": 0.4986,
+    "f1": 0.3401,
+    "prediction_breakdown": {
+      "benign": 5479,
+      "port_scan": 23,
+      "uncertain": 9
+    },
+    "confusion_matrix": [
+      [
+        2787,
+        13,
+        5
+      ],
+      [
+        2692,
+        10,
+        4
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "port_scan",
+      "uncertain"
+    ],
+    "abstention_policy": "verdicts outside {benign, port_scan} are reported as-is and count as errors for recall; none are folded into a class",
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/cicids2018/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/models/experiments/cicids2018/detective/detective.onnx"
+    ]
+  },
+  "detective_ceiling": {
+    "window_seconds": 2.0,
+    "available": true,
+    "windows": 32777,
+    "attack_windows": 8542,
+    "attack_fraction": 0.2606,
+    "auc": 0.6017,
+    "f1_attack": 0.4033,
+    "majority_class_accuracy": 0.7394,
+    "median_edges_attack": 6.0,
+    "median_edges_benign": 5.0,
+    "median_ratio_attack_over_benign": {
+      "n_edges": 1.2,
+      "n_nodes": 1.1667,
+      "max_unique_ports": 1.2,
+      "max_degree_out": 1.25,
+      "max_degree_in": 1.2,
+      "mean_duration_ms": 0.7215,
+      "mean_bytes": 0.9764,
+      "max_port_entropy": null,
+      "mean_flow_count": 1.0286
+    }
+  },
+  "cadence_sensitivity": [
+    {
+      "window_seconds": 5.0,
+      "available": true,
+      "windows": 13357,
+      "attack_windows": 3444,
+      "attack_fraction": 0.2578,
+      "auc": 0.6327,
+      "f1_attack": 0.4289,
+      "majority_class_accuracy": 0.7422,
+      "median_edges_attack": 12.0,
+      "median_edges_benign": 10.0,
+      "median_ratio_attack_over_benign": {
+        "n_edges": 1.2,
+        "n_nodes": 1.1818,
+        "max_unique_ports": 1.2,
+        "max_degree_out": 1.2632,
+        "max_degree_in": 1.2308,
+        "mean_duration_ms": 0.7072,
+        "mean_bytes": 0.979,
+        "max_port_entropy": null,
+        "mean_flow_count": 1.0531
+      }
+    },
+    {
+      "window_seconds": 10.0,
+      "available": true,
+      "windows": 6742,
+      "attack_windows": 1728,
+      "attack_fraction": 0.2563,
+      "auc": 0.6598,
+      "f1_attack": 0.4438,
+      "majority_class_accuracy": 0.7437,
+      "median_edges_attack": 22.0,
+      "median_edges_benign": 17.0,
+      "median_ratio_attack_over_benign": {
+        "n_edges": 1.2941,
+        "n_nodes": 1.2778,
+        "max_unique_ports": 1.2941,
+        "max_degree_out": 1.3415,
+        "max_degree_in": 1.25,
+        "mean_duration_ms": 0.6906,
+        "mean_bytes": 0.9964,
+        "max_port_entropy": null,
+        "mean_flow_count": 1.0205
+      }
+    },
+    {
+      "window_seconds": 30.0,
+      "available": true,
+      "windows": 2268,
+      "attack_windows": 576,
+      "attack_fraction": 0.254,
+      "auc": 0.7395,
+      "f1_attack": 0.4997,
+      "majority_class_accuracy": 0.746,
+      "median_edges_attack": 58.0,
+      "median_edges_benign": 45.0,
+      "median_ratio_attack_over_benign": {
+        "n_edges": 1.2889,
+        "n_nodes": 1.2826,
+        "max_unique_ports": 1.2889,
+        "max_degree_out": 1.3569,
+        "max_degree_in": 1.2019,
+        "mean_duration_ms": 0.597,
+        "mean_bytes": 1.0769,
+        "max_port_entropy": null,
+        "mean_flow_count": 0.9707
+      }
+    },
+    {
+      "window_seconds": 60.0,
+      "available": true,
+      "windows": 1136,
+      "attack_windows": 288,
+      "attack_fraction": 0.2535,
+      "auc": 0.7983,
+      "f1_attack": 0.5741,
+      "majority_class_accuracy": 0.7465,
+      "median_edges_attack": 109.5,
+      "median_edges_benign": 85.0,
+      "median_ratio_attack_over_benign": {
+        "n_edges": 1.2882,
+        "n_nodes": 1.2849,
+        "max_unique_ports": 1.2882,
+        "max_degree_out": 1.3752,
+        "max_degree_in": 1.2815,
+        "mean_duration_ms": 0.6338,
+        "mean_bytes": 1.0283,
+        "max_port_entropy": null,
+        "mean_flow_count": 0.9597
+      }
+    },
+    {
+      "window_seconds": 120.0,
+      "available": true,
+      "windows": 567,
+      "attack_windows": 145,
+      "attack_fraction": 0.2557,
+      "auc": 0.8518,
+      "f1_attack": 0.6374,
+      "majority_class_accuracy": 0.7443,
+      "median_edges_attack": 213.0,
+      "median_edges_benign": 164.0,
+      "median_ratio_attack_over_benign": {
+        "n_edges": 1.2988,
+        "n_nodes": 1.297,
+        "max_unique_ports": 1.2988,
+        "max_degree_out": 1.4301,
+        "max_degree_in": 1.1407,
+        "mean_duration_ms": 0.5703,
+        "mean_bytes": 0.8153,
+        "max_port_entropy": null,
+        "mean_flow_count": 0.8466
+      }
+    }
+  ],
+  "label_quality": {
+    "rows": 23605,
+    "distinct_feature_vectors": 20838,
+    "duplicate_row_fraction": 0.1172,
+    "ambiguous_vectors": 194,
+    "rows_in_ambiguous_vectors": 1762,
+    "ambiguous_row_fraction": 0.0746,
+    "deterministic_ceiling": 0.9778,
+    "rows_by_category": {
+      "normal": 19537,
+      "probe": 4068
+    },
+    "distinct_vectors_by_category": {
+      "normal": 17574,
+      "probe": 3458
+    },
+    "ambiguous_row_fraction_by_category": {
+      "normal": 0.06,
+      "probe": 0.145
+    }
+  },
+  "weight_verification": {
+    "cicids2018_bouncer_loadable": true,
+    "cicids2018_detective_loadable": true
+  }
+}

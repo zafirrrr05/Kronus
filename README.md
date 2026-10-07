@@ -85,7 +85,7 @@ For full details on the independent ML experiments, data provenance, and benchma
 
 ## ML Experiments
 
-KRONUS provides five completely independent ML experiment pipelines with separate weights and metrics:
+KRONUS provides six completely independent ML experiment pipelines with separate weights and metrics:
 
 1. **Experiment A — Repo Data (NSL-KDD):**
    - Trains Bouncer and Detective independently using the NSL-KDD dataset already in the repository (`data/real/`).
@@ -128,6 +128,17 @@ KRONUS provides five completely independent ML experiment pipelines with separat
    - Run command: `python scripts/run_dnsexf2021_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
    - Trained weights: `models/experiments/dnsexf2021/detective/`
    - Metrics: `results/experiments/dnsexf2021_metrics.json` (Detective: **not reportable**, 46,398 flows loaded)
+
+6. **Experiment F — CSE-CIC-IDS2018 (External Dataset) — both lanes train, one honest divergence:**
+   - Trains **both** KRONUS lanes on [CSE-CIC-IDS2018](https://www.unb.ca/cic/datasets/ids-2018.html) (UNB/CIC, the successor to CIC-IDS2017) across four capture days: Bouncer on DoS/DDoS flood (Hulk, SlowHTTPTest, HOIC), Detective on `Infilteration` (Nmap sweep + full port scan).
+   - **Bouncer F1 0.9925** (AUC 0.9994) on a stratified split. It also carries a leave-one-day-out block: fit on one flood day plus one benign day, score on the two days it has never seen. That gives F1 **0.9985 / 0.9977** when the unseen flood day is HOIC, and **0.8684 / 0.8681** when it is Hulk/SlowHTTPTest — with AUC still 0.988/0.993 in both. The ranking holds; the calibrated 0.5 threshold simply lands in the wrong place for a slower flood family. Stated in the metrics rather than smoothed over.
+   - **Detective F1 0.3401 — below the repo's 0.85 SLO, and disclosed.** Rather than train first and explain afterwards, the runner measures the ceiling *before* training: a cross-validated linear probe over the same windows scores AUC **0.6017** / F1 0.4033. A cadence sweep (2s→120s) lifts AUC to 0.8518 while the attack/benign activity ratio stays flat at 1.20–1.30, so the gain is measurement precision on a constant ~25% difference, not a port-scan signature. Even at 120s, F1 0.6374 is still below SLO. `verdict: BOUNCER_REPORTABLE_DETECTIVE_BELOW_SLO`.
+   - **The weak Detective score is not label noise.** 7.46% of rows sit on a feature vector carrying two classes, so the label is internally consistent — what separates `Infilteration` in this release lives in the 74 CICFlowMeter columns, and neither lane reads them (the Bouncer takes 6 rate features, the graph lane aggregates to 9 window statistics).
+   - **The capture clock is real** — the first experiment here where it is, so windows are true 2-second slices rather than replaying rows at synthetic spacing. That matters to a rate-based lane: equal spacing makes `event_rate` constant by construction.
+   - **Honest disclosure:** the ML-ready CSVs carry **no IPs and no source ports**, so hosts are reconstructed (`"synthetic_hosts": true`). Flow measurements are real, and `dest_ip` is a deterministic bijection of the **real** destination port — so the graph measures service fan-out, not host fan-out, and two of the four edge features are constant by construction. Recorded in the metrics.
+   - Run command: `python scripts/run_cicids2018_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/cicids2018/bouncer/`, `models/experiments/cicids2018/detective/`
+   - Metrics: `results/experiments/cicids2018_metrics.json` (Bouncer F1: 0.9925, Detective F1: 0.3401, 32,777 graph windows)
 
 ---
 

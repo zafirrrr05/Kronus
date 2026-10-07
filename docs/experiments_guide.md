@@ -1,6 +1,6 @@
 # KRONUS ML Experiments Guide
 
-Five completely independent ML experiments with separate weights, separate metrics, and separate training data. Experiment E is a deliberately negative result: the pipeline runs, but the dataset is measured to be incapable of supporting a detection claim, and the metrics say so rather than quoting a score.
+Six completely independent ML experiments with separate weights, separate metrics, and separate training data. Two of them are deliberately honest about a negative result: Experiment E runs the pipeline but measures the dataset to be incapable of supporting a detection claim, and Experiment F reports a Detective score below the repo's SLO because the dataset's graph-granularity signal is genuinely faint. In both cases the metrics say so rather than quoting a flattering number.
 
 ---
 
@@ -782,6 +782,322 @@ differ between runs are `timestamp` and `train_seconds`.
 
 ---
 
+## Experiment F — CSE-CIC-IDS2018 External Dataset
+
+This experiment trains **both** lanes, and they diverge: the Bouncer scores on a
+real task, the Detective does not. The divergence is measured, not asserted —
+the runner computes the Detective's ceiling *before* training it, so the weak
+number is reported next to the evidence that explains it rather than excused
+afterwards.
+
+### Dataset Source
+
+| Property | Value |
+|---|---|
+| Name | CSE-CIC-IDS2018 ("Intrusion Detection Evaluation Dataset") |
+| Publisher | Canadian Institute for Cybersecurity (CIC), University of New Brunswick |
+| Authors | Sharafaldin, Lashkari & Ghorbani (ICISSP 2018) |
+| URL | https://www.unb.ca/cic/datasets/ids-2018.html |
+| Source used | The official public AWS S3 bucket (`Processed Traffic Data for ML Algorithms`) — no form, no account, no mirror |
+| Day files | 4 CSVs: `Friday-16-02-2018`, `Wednesday-21-02-2018`, `Wednesday-28-02-2018`, `Thursday-01-03-2018` |
+| Size | ~980 MB on disk, ~1.95 M rows before thinning |
+| Schema | 80 columns: `Dst Port, Protocol, Timestamp, Flow Duration, Tot Fwd Pkts, …, Label` |
+| Raw labels seen | `Benign`, `DoS attacks-Hulk`, `DoS attacks-SlowHTTPTest`, `DDOS attack-HOIC`, `Infilteration`, plus brute-force/web/SQL/bot labels that are dropped |
+
+Each file is byte-size-verified against the release on download, and its header
+is checked against the real 80-column schema.
+
+### Why Both Lanes Train Here
+
+Unlike Experiments D and E, this dataset contains both flood traffic and
+scanning traffic, so both lanes have a real task in it:
+
+| Lane | Task | Source days |
+|---|---|---|
+| Bouncer | flood (DoS/DDoS) vs benign | `16-02` (Hulk, SlowHTTPTest) + `21-02` (HOIC) |
+| Detective | benign vs `port_scan` | `28-02` + `01-03` (both `Infilteration` + Benign) |
+
+Both lanes get **two** capture days rather than one. A single day lets a model
+separate the classes by *capture date* instead of by traffic shape; two days
+does not abolish that risk, so the Bouncer additionally carries a
+leave-one-day-out block (§ Bouncer Results) which tests it directly.
+
+### Data Acquisition
+
+```bash
+# The official public S3 bucket *is* the mirror: no form, no credentials
+python scripts/download_cicids2018.py --from-mirror
+# or: --url <base>   /   --from-local <dir>
+python scripts/run_cicids2018_experiment.py
+# Reclaim the space when done:
+rm -rf data/external/cicids2018
+```
+
+Without an argument the script prints manual instructions and exits 0, so a
+network it cannot reach never becomes a pipeline failure.
+
+### The Capture Clock Is Real — A First For This Repository
+
+Every other external loader here replays rows at **synthetic spacing**, because
+its source carries no usable time. Equal spacing makes any *rate* feature
+constant by construction, which quietly neuters the Bouncer's `event_rate` and
+`byte_rate`. CSE-CIC-IDS2018 ships a real `Timestamp`, so the timed loader
+returns it and the runner replays at true inter-arrival times: a 2-second
+window is a real 2 seconds of capture, and a flood's burst rate appears as a
+burst rate.
+
+The clock is deliberately **not** placed in `features` — an attack day is a
+different day from a benign day, so a timestamp would leak the label outright.
+
+### Host Reconstruction (honest disclosure)
+
+The ML-ready CSVs carry **no Source IP, no Destination IP and no Source Port**.
+Only the destination *port* survives. So:
+
+| Field | Reconstruction |
+|---|---|
+| `source_ip` | One constant monitored client (`172.31.69.1`). The release records no client identity, and a class-varying source would be a perfect label proxy. |
+| `dest_ip` | A deterministic bijection of the **real** `Dst Port`. Distinct destinations in a window are therefore the capture's own distinct *services*. |
+| `source_port` | `None` — genuinely absent from the release, never a stand-in. |
+| `total_bytes` | Real: `TotLen Fwd Pkts + TotLen Bwd Pkts`. |
+| `duration_ms` | Real: `Flow Duration`, microseconds → milliseconds. |
+| `dest_port`, `protocol` | Real: `Dst Port`; `Protocol` IANA number → enum. |
+| 74 features | Real CICFlowMeter measurements (the clock, label, port, protocol and byte totals are excluded so nothing is double-counted or leaked). |
+
+Recorded in the metrics as `"synthetic_hosts": true`, with the derivation in
+`synthetic_hosts_note`. Contrast with Experiment D (both hosts and features
+real) and Experiment E (neither).
+
+**A real limit this imposes on the graph lane:** because `dest_ip` is a
+bijection of the destination port, each edge is a single flow, so `flow_count`
+is identically 1 and `port_entropy` identically 0 — two of the four edge
+features are constant. `degree_out` equals `unique_ports_contacted`. That is
+stated in the metrics rather than left for a reader to discover.
+
+### Label Mapping (CSE-CIC-IDS2018 → KRONUS)
+
+| Raw label | KRONUS |
+|---|---|
+| `Benign` | `normal` (`Label.BENIGN`) |
+| `DoS attacks-Hulk`, `-SlowHTTPTest`, `-GoldenEye`, `-Slowloris` | `dos` (`Label.FLOOD`) |
+| `DDOS attack-HOIC`, `DDoS attacks-LOIC-HTTP` | `dos` (`Label.FLOOD`) |
+| `Infilteration` | `probe` (`Label.PORT_SCAN`) |
+| Brute force, web attacks, SQL injection, bot | **dropped** and counted, never force-fitted |
+
+Matching is by prefix on a casefolded, dash-normalized label, because the
+release is internally inconsistent — it ships `DDoS attacks-LOIC-HTTP`
+alongside `DDOS attack-HOIC` (upper-case, and plural vs singular "attacks") in
+the same vocabulary. Exact-string matching would silently drop real attacks.
+
+`Infilteration` is the release's own typo, and it maps to `port_scan` rather
+than `lateral_movement` on UNB's own description of the scenario — Nmap "IP
+sweep, full port scan and service enumerations" — and the captured flows
+measure that way: they touch ~1.7× more distinct destination ports and carry
+~0.6× the packets per flow of the benign traffic in the same file. Note that
+**this dataset has no `PortScan`-labelled flows at all**; the port scanning it
+contains is rolled into `Infilteration`, making it the only source of
+probe-class data here.
+
+### Train/Test Split
+
+| Lane | Split |
+|---|---|
+| Bouncer | Stratified 67/33 **per day** (61,224 train / 30,158 test), seeded. Splitting per day keeps each day's contribution proportional on both sides — splitting the pool would let one day land mostly in train and another mostly in test, converting a day difference into a test-set difference. |
+| Detective | Stratified 67/33 per class over graph windows (11,187 train / 5,511 test), seeded, by an **evenly spaced stride** so neither the quota nor a time-of-day prefix biases the set. |
+
+The Bouncer's stride is **global** across all four files: a flood row and a
+benign row are decimated identically, so their rates stay comparable. A
+per-file row budget would thin a 333 MB day harder than a 108 MB day and
+manufacture a rate difference that is not in the data.
+
+### Benign Rows Inside An Attack Are Held Out, Not Mislabelled
+
+Because every row shares one reconstructed `source_ip`, the featurizer's
+2-second aggregate is **global to the capture**, not per-host. A benign flow
+arriving mid-flood sits in a window the flood dominates and its features are
+the flood's. Labelling those rows "benign" would teach the model that a flood
+is benign, so `attack_intervals()` grows each attack's span by a 3-second
+guard and benign is drawn only from outside it.
+
+The cost is real and is why benign comes from the infiltration days:
+
+| Day | Rows loaded | Flood | Benign outside attack | Benign **held out** inside attack |
+|---|---|---|---|---|
+| `16-02` | 52,429 | 30,000 | 16 | **22,313** |
+| `21-02` | 52,429 | 30,000 | 97 | **18,136** |
+| `28-02` | 30,654 | 0 | 21,015 | 6,191 |
+| `01-03` | 16,555 | 0 | 10,254 | 1,648 |
+
+On the flood days, 99.9% of benign traffic is concurrent with the attack.
+
+### Bouncer Results
+
+| Metric | Value |
+|---|---|
+| Accuracy | 0.9902 |
+| Precision | 0.9994 |
+| Recall | 0.9857 |
+| **F1** | **0.9925** |
+| AUC | 0.9994 |
+| Train / test rows | 61,224 (40,200 flood / 21,024 benign) / 30,158 |
+| Confusion matrix (benign, flood) | `[[10347, 11], [284, 19516]]` |
+
+Class-conditional medians, which show the separation is real traffic shape and
+not an artifact:
+
+| Feature | Flood | Benign |
+|---|---|---|
+| `event_rate` | 44.0 | 1.5 |
+| `avg_duration_ms` | 12.38 | 2,505.7 |
+| `dest_port_entropy` | 0.0 | 1.0 |
+| `unique_dest_count` | 1.0 | 2.0 |
+| `same_dest_ratio` | 1.0 | 0.5 |
+| `byte_rate` | 1,967.5 | 1,440.0 |
+
+A model that separates on traffic shape and one that separates on a *day
+fingerprint* can both score 0.99, so the runner also fits on one flood day plus
+one benign day and scores the two days it has never seen:
+
+| Trained on (flood + benign) | Tested on (flood + benign) | F1 | AUC | Flood rows missed |
+|---|---|---|---|---|
+| `16-02` + `28-02` | `21-02` + `01-03` | **0.9985** | 0.9995 | 90 / 30,000 |
+| `16-02` + `01-03` | `21-02` + `28-02` | **0.9977** | 0.9993 | 84 / 30,000 |
+| `21-02` + `28-02` | `16-02` + `01-03` | **0.8684** | 0.9883 | 6,978 / 30,000 |
+| `21-02` + `01-03` | `16-02` + `28-02` | **0.8681** | 0.9925 | 6,972 / 30,000 |
+
+**Read the asymmetry honestly.** A model trained on the slow/rate-limited
+family (Hulk, SlowHTTPTest) detects HOIC essentially perfectly. An
+HOIC-trained model misses ~23% of Hulk/SlowHTTPTest traffic. But its AUC in
+that direction is still 0.988–0.993 — the *ranking* holds, and what fails is
+the calibrated 0.5 threshold sitting in the wrong place for a flood family
+whose rate distribution differs from the one it was calibrated on. An operator
+would recover most of it by re-thresholding; a deployer should re-calibrate per
+attack family. This is the honest limit of a threshold-on-rate detector, and it
+is in the metrics rather than in a footnote.
+
+### The Detective's Ceiling, Measured Before Training
+
+The `Infilteration` label is only weakly separable from benign at the
+production 2-second cadence. Rather than train a model and explain a poor score
+afterwards, the runner measures the ceiling first with a 3-fold cross-validated
+linear probe over **the same windows the GAT is trained on** (all 32,777 of
+them, not a quota):
+
+| Measurement | Value |
+|---|---|
+| Windows at production cadence | 32,777 (8,542 probe / 24,235 benign) |
+| Probe AUC | **0.6017** |
+| Probe F1 (probe class) | 0.4033 |
+| Majority-class accuracy | 0.7394 |
+| Median edges per window (attack / benign) | 6 / 5 |
+
+### Window-Cadence Sensitivity
+
+Does a coarser window reveal the attack, or just measure the same small
+difference more precisely? One pass over each day drives every cadence's
+builder over the *same* event stream:
+
+| Window | Windows | Probe AUC | Probe F1 | Median edges attack/benign | Ratio |
+|---|---|---|---|---|---|
+| **2 s** (production) | 32,777 | **0.6017** | 0.4033 | 6 / 5 | 1.20 |
+| 5 s | 13,357 | 0.6327 | 0.4289 | 12 / 10 | 1.20 |
+| 10 s | 6,742 | 0.6598 | 0.4438 | 22 / 17 | 1.29 |
+| 30 s | 2,268 | 0.7395 | 0.4997 | 58 / 45 | 1.29 |
+| 60 s | 1,136 | 0.7983 | 0.5741 | 110 / 85 | 1.29 |
+| 120 s | 567 | **0.8518** | 0.6374 | 213 / 164 | 1.30 |
+
+AUC climbs 0.60 → 0.85 across a 60× change in window length, and the
+attack/benign activity ratio stays pinned between 1.20 and 1.30 the whole way.
+**The rising AUC is precision of estimate on a constant ~25% activity
+difference, not a port-scan signature.** Even at 120 seconds the F1 (0.6374)
+remains below this repository's 0.85 SLO. The attack genuinely is faint in this
+capture at graph granularity.
+
+### Detective Results
+
+| Metric | Value |
+|---|---|
+| Accuracy | 0.5075 |
+| Precision (macro) | 0.4717 |
+| Recall (macro) | 0.4986 |
+| **F1 (macro)** | **0.3401 — below the 0.85 SLO** |
+| Train / test windows | 11,187 (5,492 probe / 5,695 benign) / 5,511 |
+| Train seconds | 89.7 (4 epochs, batch 16) |
+| Predictions | 5,479 `benign`, 23 `port_scan`, 9 `uncertain` |
+| Confusion matrix | `[[2787, 13, 5], [2692, 10, 4], [0, 0, 0]]` over `[benign, port_scan, uncertain]` |
+
+The GAT learns essentially the majority class, and scores **below the linear
+probe's ceiling** (F1 0.4033) — which is the expected outcome, not a training
+bug: a 3-class head must apportion probability to `lateral_movement`, a class
+this dataset never trains.
+
+Abstentions are recorded **verbatim**. `predict_verdict` returns a label
+post-`derive_label`, so it can be `uncertain`; those 9 verdicts are never
+folded into the class they "probably" meant, and they count against recall
+because a value equal to neither class can be no class's true positive.
+
+### Why The Weak Score Is Not Label Noise
+
+It would be convenient to blame the label. The measurement says otherwise:
+
+| Measurement | Value |
+|---|---|
+| Rows sampled (stride 40, both infiltration days, features on) | 23,605 |
+| Distinct feature vectors | 20,838 |
+| Vectors carrying two different classes | 194 |
+| Rows on those vectors | 1,762 — **7.46%** |
+| Label-consistency ceiling for any function of the 74 features | **0.9778** |
+| Rows by category | 19,537 normal / 4,068 probe |
+
+Read that ceiling for what it is: because most rows carry a unique feature
+vector, this figure is a **label-consistency** measure — it says only ~2.2% of
+rows are irreducible, i.e. the `Infilteration` label is internally consistent
+and *not* the DNS-EXF situation of Experiment E. It is **not** a claim that a
+classifier could reach 0.98 here; the achievable figure is the ceiling probe's,
+which is far lower.
+
+So the honest conclusion is a **lane mismatch, not a broken label**: what
+separates `Infilteration` from benign in this release lives in the 74
+CICFlowMeter columns, and neither lane reads them — the Bouncer takes 6 rate
+features, and the graph lane aggregates to 9 window statistics. This is the
+same dataset that Experiment B (CIC-IDS2017) scores 0.9846 on, and the
+difference is not that the traffic changed; it is that CIC-IDS2017's PortScan
+class is dense and loud, while this release's scanning is folded into a
+labelled window that is mostly ordinary background traffic.
+
+### Artifact Paths
+
+```
+models/experiments/cicids2018/bouncer/bouncer.json
+models/experiments/cicids2018/bouncer/calibration.json
+models/experiments/cicids2018/detective/detective.npz
+models/experiments/cicids2018/detective/detective.onnx
+results/experiments/cicids2018_metrics.json
+```
+
+### Current Status
+
+```
+STATUS:   COMPLETE
+VERDICT:  BOUNCER_REPORTABLE_DETECTIVE_BELOW_SLO
+FLOWS:    151,867 rows loaded across four days at stride 20 (Bouncer);
+          944,171 rows at stride 1 across two days (Detective windows)
+WINDOWS:  32,777 graph windows at the production 2-second cadence
+```
+
+| Check | Result |
+|---|---|
+| Bouncer weights load + live inference | **PASSED** |
+| Detective weights load + live inference | **PASSED** |
+| Bouncer F1 | 0.9925 (cross-day 0.9985 … 0.8681) |
+| Detective F1 | 0.3401 — below SLO, ceiling 0.6017 AUC |
+| Elapsed | 172 s |
+
+Reproducibility: re-running reproduces these figures. The only fields that
+differ between runs are `timestamp`, `train_seconds` and `elapsed_seconds`.
+
+---
+
 ## What Was Removed
 
 A previous iteration of this repository included a second experiment ("API-data experiment") that used **synthetically generated network telemetry** (generated benign/flood/port-scan events, not real data). That experiment has been completely removed because:
@@ -805,20 +1121,21 @@ A previous iteration of this repository included a second experiment ("API-data 
 
 ## Summary Comparison
 
-| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) | Experiment E (DNS-EXF2021) |
-|---|---|---|---|---|---|
-| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC | CIC-Bell-DNS-EXF-2021 from UNB/CIC |
-| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) | External capture (2021, DNS exfiltration) |
-| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) | **Detective only** (no flood class exists) |
-| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** | DNS exfiltration → **lateral_movement** |
-| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** | Reconstructed (**no IPs, ports, bytes or durations in source**) |
-| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows | 46,398 flows (from 536,138 rows; 99.95% of attack rows are label-ambiguous and dropped) |
-| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained | not trained |
-| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** | **not reportable** — see below |
-| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` | `models/experiments/dnsexf2021/` |
-| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` | `results/experiments/dnsexf2021_metrics.json` |
-| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a | Detective PASSED · Bouncer n/a |
-| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` | `python scripts/run_dnsexf2021_experiment.py` |
+| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) | Experiment E (DNS-EXF2021) | Experiment F (CSE-CIC-IDS2018) |
+|---|---|---|---|---|---|---|
+| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC | CIC-Bell-DNS-EXF-2021 from UNB/CIC | CSE-CIC-IDS2018 from UNB/CIC (public S3 bucket) |
+| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) | External capture (2021, DNS exfiltration) | External capture (2018, four days) |
+| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) | **Detective only** (no flood class exists) | Bouncer + Detective (**Detective below SLO**) |
+| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** | DNS exfiltration → **lateral_movement** | DoS/DDoS → flood, `Infilteration` → port_scan |
+| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** | Reconstructed (**no IPs, ports, bytes or durations in source**) | Reconstructed (**no IPs, no source ports**; `dest_ip` is a bijection of the **real** dest port) |
+| Clock | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | **Real capture clock** (a first here) |
+| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows | 46,398 flows (from 536,138 rows; 99.95% of attack rows are label-ambiguous and dropped) | 61,224 Bouncer train / 30,158 test; 32,777 graph windows |
+| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained | not trained | **0.9925** (cross-day 0.9985 … 0.8681) |
+| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** | **not reportable** — see below | **0.3401 — below the 0.85 SLO** — see below |
+| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` | `models/experiments/dnsexf2021/` | `models/experiments/cicids2018/{bouncer,detective}/` |
+| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` | `results/experiments/dnsexf2021_metrics.json` | `results/experiments/cicids2018_metrics.json` |
+| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a | Detective PASSED · Bouncer n/a | Bouncer PASSED · Detective PASSED |
+| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` | `python scripts/run_dnsexf2021_experiment.py` | `python scripts/run_cicids2018_experiment.py` |
 
 Experiment E is the only entry here whose Detective F1 is withheld. Its
 trained score is 1.0000, but the dataset's label-ambiguity ceiling is 0.8210
@@ -826,6 +1143,22 @@ and the ambiguity guard leaves 32 attack signatures across 32 rows, so the
 score measures a lookup table rather than detection. The runner records it as
 `reportable_as_detection: false` with `verdict: NO_VALID_DETECTION_METRIC`
 instead of quoting it as a result.
+
+Experiment F is the only entry here whose Detective F1 is **published and
+below target**. It is reported rather than withheld because the dataset's
+label is sound — only 7.46% of rows sit on a feature vector carrying two
+classes, so `Infilteration` is internally consistent and the weak score is the
+model's, not the label's. The runner measures the ceiling *before* training
+(a 3-fold linear probe over the same windows scores AUC 0.6017 / F1 0.4033)
+and sweeps the window cadence (AUC reaches 0.8518 at 120 s while the
+attack/benign activity ratio stays flat at 1.20–1.30, so the gain is
+measurement precision on a constant ~25% difference, not a port-scan
+signature). The GAT's 0.3401 is below even the probe's ceiling, which is the
+expected outcome of a 3-class head over a class that is faint at graph
+granularity. The Bouncer, on the same data, is strong within-day (0.9925) and
+strong cross-day in one direction (0.9985 / 0.9977), degrading to 0.8684 /
+0.8681 when the unseen flood day is the slow/rate-limited family. Both numbers
+ship; `verdict: BOUNCER_REPORTABLE_DETECTIVE_BELOW_SLO`.
 
 ---
 
@@ -876,6 +1209,23 @@ explicitly marked non-reportable. That output is the intended result — see the
 Experiment E section above. If the runner instead reports a valid detection
 metric, the data is not what the loader was written against.
 
+### Experiment F
+```bash
+# Fetch the four day CSVs (~980 MB) from the official public S3 bucket:
+# no form, no account, no mirror. Byte-size-verified on download.
+python scripts/download_cicids2018.py --from-mirror
+python scripts/run_cicids2018_experiment.py
+# Reclaim the space when done:
+rm -rf data/external/cicids2018
+```
+
+Expect `VERDICT: BOUNCER_REPORTABLE_DETECTIVE_BELOW_SLO`. The Bouncer's F1 is
+near 0.99 and the Detective's is near 0.34, well below the 0.85 external-dataset
+SLO. That divergence is the intended, measured result — see the Experiment F
+section above. The runner also prints a pre-training ceiling probe and a
+window-cadence sweep; if either is missing, the run did not execute the
+measurement path.
+
 ### Recorded Seeds
 
 | Experiment | Component | Seed |
@@ -892,3 +1242,7 @@ metric, the data is not what the loader was written against.
 | Split (DoHBrw) | All | 42 (per-class, stratified) |
 | DNS-EXF2021 | Detective | 42 |
 | Split (DNS-EXF) | All | 42 (per-class, stratified) |
+| CSE-CIC-IDS2018 | Bouncer | 42 |
+| CSE-CIC-IDS2018 | Detective | 42 |
+| Split (CIC-IDS2018) | Bouncer | 42 (per-day, stratified 67/33) |
+| Split (CIC-IDS2018) | Detective | 42 (per-class, stratified 67/33, evenly spaced stride) |
