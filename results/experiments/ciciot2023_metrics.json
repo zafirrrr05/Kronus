@@ -1,0 +1,423 @@
+{
+  "experiment": "ciciot2023",
+  "status": "COMPLETE",
+  "timestamp": "2026-10-08T09:23:46.688080+00:00",
+  "notes": "The first experiment in this repository where both lanes train: the release carries volumetric floods and recon scans against the same benign baseline. Rows are flows this repository extracted from the publisher's packet captures, not rows the publisher published \u2014 see dataset.extraction and dataset.flow_definition.",
+  "dataset": {
+    "source": "CIC IoT 2023 (Canadian Institute for Cybersecurity, UNB)",
+    "url": "https://www.unb.ca/cic/datasets/iotdataset-2023.html",
+    "total_flows": 442422,
+    "captures": 4,
+    "category_distribution": {
+      "normal": 197194,
+      "dos": 48376,
+      "probe": 196852
+    },
+    "synthetic_hosts": false,
+    "features_are_real": true,
+    "extraction": "flows extracted by us from the publisher's packet captures; addresses, ports and times are the capture's",
+    "flow_definition": {
+      "key": "bidirectional 5-tuple (endpoints sorted)",
+      "idle_timeout_s": 30.0,
+      "active_timeout_s": 120.0,
+      "source_ip": "endpoint that sent the flow's first packet",
+      "timestamp": "flow's first-packet time"
+    },
+    "per_capture": [
+      {
+        "capture": "BenignTraffic.pcap",
+        "family": "Benign_Final",
+        "packets_parsed": 3534248,
+        "flows": 197194,
+        "drops": {
+          "ipv6_frames": 18428,
+          "linktype_used_1": 1,
+          "non_ip_frames": 111488
+        },
+        "flows_kept": 197194,
+        "sampled_to": 197194
+      },
+      {
+        "capture": "DDoS-UDP_Flood.pcap",
+        "family": "DDoS-UDP_Flood",
+        "packets_parsed": 26622523,
+        "flows": 40674,
+        "drops": {
+          "ipv6_frames": 884,
+          "linktype_used_1": 1,
+          "non_ip_frames": 30144
+        },
+        "flows_kept": 40674,
+        "sampled_to": 40674
+      },
+      {
+        "capture": "Mirai-udpplain.pcap",
+        "family": "Mirai-udpplain",
+        "packets_parsed": 3622666,
+        "flows": 7702,
+        "drops": {
+          "ipv6_frames": 1537,
+          "linktype_used_1": 1,
+          "non_ip_frames": 18066
+        },
+        "flows_kept": 7702,
+        "sampled_to": 7702
+      },
+      {
+        "capture": "Recon-PortScan.pcap",
+        "family": "Recon-PortScan",
+        "packets_parsed": 802300,
+        "flows": 196852,
+        "drops": {
+          "ipv6_frames": 3915,
+          "linktype_used_1": 1,
+          "non_ip_frames": 25641
+        },
+        "flows_kept": 196852,
+        "sampled_to": 196852
+      }
+    ],
+    "dropped_families": null,
+    "rows_by_family": {
+      "Benign_Final": 197194,
+      "DDoS-UDP_Flood": 40674,
+      "Mirai-udpplain": 7702,
+      "Recon-PortScan": 196852
+    }
+  },
+  "bouncer": {
+    "n": 81348,
+    "n_flood": 40674,
+    "n_benign": 40674,
+    "accuracy": 0.7973,
+    "precision": 0.7793,
+    "recall": 0.8295,
+    "f1": 0.8036,
+    "auc": 0.8563,
+    "confusion_matrix": [
+      [
+        31116,
+        9558
+      ],
+      [
+        6934,
+        33740
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "flood"
+    ],
+    "component": "bouncer",
+    "training_origin": "ciciot2023",
+    "dataset_source": "CIC IoT 2023 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/iotdataset-2023.html",
+    "model_type": "XGBoost + temperature scaling (fresh, from scratch)",
+    "task": "binary flood vs benign",
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "synthetic_hosts": false,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "split_unit": "capture",
+    "split_strategy_flood": "capture_holdout(train=1,test=1)",
+    "split_strategy_benign": "flow_stride_within_single_capture",
+    "n_train": 15404,
+    "n_train_flood": 7702,
+    "n_train_benign": 7702,
+    "class_balanced": true,
+    "class_balance_note": "the majority class was strided down to the minority, after featurizing the full stream; these captures are too unequal to train on as split",
+    "n_train_flood_before_balance": 7702,
+    "n_train_benign_before_balance": 131463,
+    "n_test_flood_before_balance": 40674,
+    "n_test_benign_before_balance": 65731,
+    "train_seconds": 0.323,
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/bouncer/bouncer.json",
+      "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/bouncer/calibration.json"
+    ]
+  },
+  "detective": {
+    "component": "detective",
+    "training_origin": "ciciot2023",
+    "dataset_source": "CIC IoT 2023 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/iotdataset-2023.html",
+    "model_type": "GAT in autograd (trained from scratch)",
+    "task": "macro benign vs port_scan graph window classification",
+    "synthetic_hosts": false,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "split_unit": "capture",
+    "split_strategy_probe": "flow_stride_within_single_capture",
+    "split_strategy_benign": "flow_stride_within_single_capture",
+    "trained_labels": [
+      "benign",
+      "port_scan"
+    ],
+    "never_trained_labels": [
+      "lateral_movement"
+    ],
+    "n_train_benign": 131463,
+    "n_train_probe": 131235,
+    "n_test_benign": 65731,
+    "n_test_probe": 65617,
+    "window_pool_limit_per_class": 10000,
+    "window_seconds": 30.0,
+    "epochs": 20,
+    "class_balanced": true,
+    "class_balance_note": "both window pools were strided to the smaller, then capped; the benign stream yields far more windows than the sparser scan capture",
+    "train_windows_benign_before_balance": 1101,
+    "train_windows_probe_before_balance": 249,
+    "test_windows_benign_before_balance": 1096,
+    "test_windows_probe_before_balance": 244,
+    "train_windows_benign": 249,
+    "train_windows_probe": 249,
+    "test_windows_benign": 244,
+    "test_windows_probe": 244,
+    "train_windows": 498,
+    "test_windows": 488,
+    "n_uncertain_verdicts": 39,
+    "train_seconds": 39.827,
+    "accuracy": 0.8893,
+    "majority_class_accuracy": 0.5,
+    "precision": 0.9037,
+    "recall": 0.8893,
+    "f1": 0.8884,
+    "confusion_matrix": [
+      [
+        240,
+        4,
+        0
+      ],
+      [
+        50,
+        194,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "port_scan",
+      "lateral_movement"
+    ],
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/detective/detective.npz",
+      "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/detective/detective.onnx"
+    ]
+  },
+  "cadence_sweep": {
+    "note": "Window-vector linear ceiling by graph window size: how separable benign and port_scan are at each cadence, measured on the same stream with only the nine window statistics, independently of the GAT. This is the evidence behind detective.window_seconds. Read median_ratio_attack_over_benign alongside auc: if the ratios stay flat while auc rises, the longer window is estimating the same small difference more precisely, not revealing a scan signature.",
+    "feature_names": [
+      "n_edges",
+      "n_nodes",
+      "max_unique_ports",
+      "max_degree_out",
+      "max_degree_in",
+      "mean_duration_ms",
+      "mean_bytes",
+      "max_port_entropy",
+      "mean_flow_count"
+    ],
+    "sweep": [
+      {
+        "window_seconds": 2.0,
+        "available": true,
+        "windows": 17900,
+        "attack_windows": 3332,
+        "attack_fraction": 0.1861,
+        "auc": 0.83,
+        "f1_attack": 0.5091,
+        "majority_class_accuracy": 0.8139,
+        "median_edges_attack": 9.0,
+        "median_edges_benign": 9.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0,
+          "n_nodes": 1.0769,
+          "max_unique_ports": 1.0,
+          "max_degree_out": 1.0,
+          "max_degree_in": 1.25,
+          "mean_duration_ms": 0.1037,
+          "mean_bytes": 0.9235,
+          "max_port_entropy": 1.0,
+          "mean_flow_count": 1.1458
+        }
+      },
+      {
+        "window_seconds": 5.0,
+        "available": true,
+        "windows": 7785,
+        "attack_windows": 1448,
+        "attack_fraction": 0.186,
+        "auc": 0.8965,
+        "f1_attack": 0.631,
+        "majority_class_accuracy": 0.814,
+        "median_edges_attack": 18.0,
+        "median_edges_benign": 18.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0,
+          "n_nodes": 1.0,
+          "max_unique_ports": 1.6667,
+          "max_degree_out": 1.0769,
+          "max_degree_in": 1.2,
+          "mean_duration_ms": 0.1312,
+          "mean_bytes": 1.0809,
+          "max_port_entropy": 2.03,
+          "mean_flow_count": 1.1579
+        }
+      },
+      {
+        "window_seconds": 10.0,
+        "available": true,
+        "windows": 3974,
+        "attack_windows": 732,
+        "attack_fraction": 0.1842,
+        "auc": 0.9608,
+        "f1_attack": 0.7788,
+        "majority_class_accuracy": 0.8158,
+        "median_edges_attack": 32.0,
+        "median_edges_benign": 32.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0,
+          "n_nodes": 1.0244,
+          "max_unique_ports": 3.0,
+          "max_degree_out": 1.0,
+          "max_degree_in": 1.1,
+          "mean_duration_ms": 0.1358,
+          "mean_bytes": 1.5354,
+          "max_port_entropy": 3.0,
+          "mean_flow_count": 1.2144
+        }
+      },
+      {
+        "window_seconds": 30.0,
+        "available": true,
+        "windows": 1352,
+        "attack_windows": 250,
+        "attack_fraction": 0.1849,
+        "auc": 0.9915,
+        "f1_attack": 0.928,
+        "majority_class_accuracy": 0.8151,
+        "median_edges_attack": 73.0,
+        "median_edges_benign": 78.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 0.9359,
+          "n_nodes": 1.0116,
+          "max_unique_ports": 11.8,
+          "max_degree_out": 1.0449,
+          "max_degree_in": 1.1429,
+          "mean_duration_ms": 0.1311,
+          "mean_bytes": 0.8761,
+          "max_port_entropy": 5.2479,
+          "mean_flow_count": 1.4094
+        }
+      },
+      {
+        "window_seconds": 60.0,
+        "available": true,
+        "windows": 689,
+        "attack_windows": 134,
+        "attack_fraction": 0.1945,
+        "auc": 0.9612,
+        "f1_attack": 0.9164,
+        "majority_class_accuracy": 0.8055,
+        "median_edges_attack": 138.0,
+        "median_edges_benign": 135.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0222,
+          "n_nodes": 1.0945,
+          "max_unique_ports": 16.75,
+          "max_degree_out": 4.1603,
+          "max_degree_in": 5.1024,
+          "mean_duration_ms": 0.1657,
+          "mean_bytes": 0.3198,
+          "max_port_entropy": 6.7145,
+          "mean_flow_count": 2.8606
+        }
+      },
+      {
+        "window_seconds": 120.0,
+        "available": true,
+        "windows": 358,
+        "attack_windows": 80,
+        "attack_fraction": 0.2235,
+        "auc": 0.961,
+        "f1_attack": 0.9317,
+        "majority_class_accuracy": 0.7765,
+        "median_edges_attack": 207.5,
+        "median_edges_benign": 196.0,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0587,
+          "n_nodes": 1.0764,
+          "max_unique_ports": 94.75,
+          "max_degree_out": 5.3323,
+          "max_degree_in": 6.565,
+          "mean_duration_ms": 0.8269,
+          "mean_bytes": 0.2373,
+          "max_port_entropy": 3.8111,
+          "mean_flow_count": 3.4128
+        }
+      },
+      {
+        "window_seconds": 300.0,
+        "available": true,
+        "windows": 156,
+        "attack_windows": 44,
+        "attack_fraction": 0.2821,
+        "auc": 0.9953,
+        "f1_attack": 0.9647,
+        "majority_class_accuracy": 0.7179,
+        "median_edges_attack": 248.0,
+        "median_edges_benign": 246.5,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 1.0061,
+          "n_nodes": 1.0401,
+          "max_unique_ports": 66.6667,
+          "max_degree_out": 3.0191,
+          "max_degree_in": 3.1269,
+          "mean_duration_ms": 0.8442,
+          "mean_bytes": 0.1726,
+          "max_port_entropy": 3.8367,
+          "mean_flow_count": 2.401
+        }
+      },
+      {
+        "window_seconds": 600.0,
+        "available": true,
+        "windows": 81,
+        "attack_windows": 25,
+        "attack_fraction": 0.3086,
+        "auc": 0.9964,
+        "f1_attack": 0.96,
+        "majority_class_accuracy": 0.6914,
+        "median_edges_attack": 284.0,
+        "median_edges_benign": 300.5,
+        "median_ratio_attack_over_benign": {
+          "n_edges": 0.9451,
+          "n_nodes": 0.9775,
+          "max_unique_ports": 43.4783,
+          "max_degree_out": 2.93,
+          "max_degree_in": 1.9152,
+          "mean_duration_ms": 0.8866,
+          "mean_bytes": 0.1584,
+          "max_port_entropy": 2.878,
+          "mean_flow_count": 2.1533
+        }
+      }
+    ]
+  },
+  "weight_verification": {
+    "ciciot2023_bouncer_loadable": true,
+    "ciciot2023_detective_loadable": true
+  }
+}
