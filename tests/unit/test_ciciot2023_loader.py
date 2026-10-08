@@ -41,6 +41,7 @@ from twin.ciciot2023 import (
     PcapFormatError,
     _evenly_spaced,
     load_ciciot2023,
+    load_ciciot2023_by_capture,
     load_ciciot2023_report,
     load_ciciot2023_timed,
     resolve_family,
@@ -412,6 +413,23 @@ def test_an_empty_directory_reports_rather_than_raises(tmp_path):
     assert rows == []
     assert report["rows_loaded"] == 0
     assert "no captures" in report["reason"]
+
+
+def test_by_capture_keeps_each_capture_separate(tmp_path):
+    """The runner splits on the capture, not the flow, so it needs to know
+    which capture each row came from."""
+    for family, address in (("Benign_Final", "10.0.0.1"),
+                            ("DDoS-UDP_Flood", "10.0.0.2")):
+        _write_pcap(tmp_path / family / "c.pcap",
+                    _eth_records([(1.0, _tcp(address, "10.0.0.9", 5000, 80))]))
+
+    by_capture = load_ciciot2023_by_capture(tmp_path)
+
+    assert set(by_capture) == {"c.pcap", "DDoS-UDP_Flood/c.pcap"}
+    rows, times, report = by_capture["DDoS-UDP_Flood/c.pcap"]
+    assert len(rows) == 1 and times == [1.0]
+    assert rows[0].kronus_label is Label.FLOOD
+    assert report["family"] == "DDoS-UDP_Flood"
 
 
 def test_a_big_endian_capture_reads_the_same(tmp_path):

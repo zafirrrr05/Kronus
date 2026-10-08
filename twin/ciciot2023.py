@@ -502,6 +502,18 @@ def _evenly_spaced(total: int, target: int | None) -> list[int]:
 
 # --- public API -------------------------------------------------------------
 
+def _load_one_capture(capture: Path, sample_per_capture: int | None
+                      ) -> tuple[list[NSLKDDRow], list[float], dict]:
+    rows, times, report = extract_flows(capture)
+    report["flows_kept"] = len(rows)
+    if sample_per_capture is not None and len(rows) > sample_per_capture:
+        keep = _evenly_spaced(len(rows), sample_per_capture)
+        rows = [rows[i] for i in keep]
+        times = [times[i] for i in keep]
+    report["sampled_to"] = len(rows)
+    return rows, times, report
+
+
 def _read_rows(
     path: str | Path,
     limit: int | None,
@@ -529,15 +541,8 @@ def _read_rows(
             # Out of scope, counted rather than loaded under a guessed label.
             dropped_families[_family_name(capture)] += 1
             continue
-        capture_rows, capture_times, report = extract_flows(capture)
-        report["flows_kept"] = len(capture_rows)
-        if sample_per_capture is not None and len(capture_rows) > sample_per_capture:
-            keep = _evenly_spaced(len(capture_rows), sample_per_capture)
-            capture_rows = [capture_rows[i] for i in keep]
-            capture_times = [capture_times[i] for i in keep]
-            report["sampled_to"] = len(capture_rows)
-        else:
-            report["sampled_to"] = len(capture_rows)
+        capture_rows, capture_times, report = _load_one_capture(
+            capture, sample_per_capture)
         per_capture.append(report)
         family_counts[report["family"]] += len(capture_rows)
         rows.extend(capture_rows)
@@ -607,3 +612,29 @@ def load_ciciot2023_report(
     """Load flows and the extraction report in one pass."""
     rows, _, report = _read_rows(path, limit, sample_per_capture, False)
     return rows, report
+
+
+def load_ciciot2023_by_capture(
+    path: str | Path,
+    sample_per_capture: int | None = None,
+) -> dict[str, tuple[list[NSLKDDRow], list[float], dict]]:
+    """Load per capture: {capture name: (rows, times, report)}.
+
+    The runner needs the capture a row came from, because the split unit has to
+    be the capture rather than the flow. Every flow in one capture shares that
+    capture's burst — the same attacker, the same victim, the same moments — so
+    a random split over pooled flows would put half of one burst in train and
+    half in test and report the near-duplicate as generalization. Keys are
+    capture file names, which are unique in the downloader's flat-per-family
+    layout; a genuine collision is renamed rather than silently overwritten.
+    """
+    by_capture: dict[str, tuple[list[NSLKDDRow], list[float], dict]] = {}
+    for capture in _capture_paths(Path(path)):
+        if resolve_family(_family_name(capture)) is None:
+            continue
+        key = capture.name
+        if key in by_capture:
+            key = f"{_family_name(capture)}/{capture.name}"
+        rows, times, report = _load_one_capture(capture, sample_per_capture)
+        by_capture[key] = (rows, times, report)
+    return by_capture
