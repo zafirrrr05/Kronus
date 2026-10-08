@@ -119,6 +119,12 @@ TRAIN_RATIO = 0.67
 SEED = 42
 DEFAULT_SAMPLE_PER_CAPTURE = 40_000
 
+# The Detective trains at batch 4 in pure NumPy, so its window pool is capped
+# well below the Bouncer's: 40k windows a side is hours of GradientTape-free
+# backprop for a number that a 10k stride estimates just as well. The Bouncer
+# keeps the larger pool because XGBoost over six columns is cheap.
+DEFAULT_DETECTIVE_LIMIT = 10_000
+
 # A score computed from a handful of flows is not a measurement. Below these
 # counts the runner refuses to write metrics rather than reporting a number the
 # sample cannot support.
@@ -225,6 +231,14 @@ def _evenly_spaced(total: int, target: int | None) -> list[int]:
         return list(range(total))
     step = total / target
     return [min(total - 1, int(i * step)) for i in range(target)]
+
+
+def _cap_pair(rows: list, times: list, limit: int | None) -> tuple[list, list]:
+    """Cap one window pool, keeping rows and times aligned."""
+    keep = _evenly_spaced(len(rows), limit)
+    if len(keep) == len(rows):
+        return rows, times
+    return [rows[i] for i in keep], [times[i] for i in keep]
 
 
 # --- Bouncer ----------------------------------------------------------------
@@ -345,9 +359,15 @@ def _build_graph_snapshots(rows: list, times: list, label: Label) -> list[tuple]
     return labeled
 
 
-def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int
-                    ) -> tuple[DetectiveModel | None, dict]:
-    """Train the Detective on port_scan vs benign graph windows."""
+def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int,
+                    limit: int | None) -> tuple[DetectiveModel | None, dict]:
+    """Train the Detective on port_scan vs benign graph windows.
+
+    `limit` caps each class's window pool per side. It exists because the GAT
+    here is pure NumPy at batch 4: an unbounded pool of a few hundred thousand
+    windows is hours of training for a bounded-sample experiment. The cap is an
+    evenly spaced stride, so the pool still spans the capture.
+    """
     probe = _pool(by_capture, "probe")
     benign = _pool(by_capture, "normal")
 
@@ -368,6 +388,11 @@ def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int
             "skipped": "the capture split left no probe and/or benign flows to test on",
             "n_probe_test": len(p_te), "n_benign_test": len(b_te),
         }
+
+    (p_tr, p_tr_t), (b_tr, b_tr_t) = (
+        _cap_pair(p_tr, p_tr_t, limit), _cap_pair(b_tr, b_tr_t, limit))
+    (p_te, p_te_t), (b_te, b_te_t) = (
+        _cap_pair(p_te, p_te_t, limit), _cap_pair(b_te, b_te_t, limit))
 
     train_snaps = (_build_graph_snapshots(b_tr, b_tr_t, Label.BENIGN)
                    + _build_graph_snapshots(p_tr, p_tr_t, Label.PORT_SCAN))
@@ -443,6 +468,7 @@ def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int
         "n_train_probe": len(p_tr),
         "n_test_benign": len(b_te),
         "n_test_probe": len(p_te),
+        "window_pool_limit_per_class": limit,
         "train_windows": len(train_snaps),
         "test_windows": len(test_snaps),
         "n_uncertain_verdicts": n_uncertain,
@@ -538,6 +564,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample-per-capture", type=int, default=DEFAULT_SAMPLE_PER_CAPTURE,
                         help="max flows kept per capture (evenly spaced, not a prefix)")
+    parser.add_argument("--detective-limit", type=int, default=DEFAULT_DETECTIVE_LIMIT,
+                        help="max graph windows per class per side for the Detective "
+                             "(the NumPy GAT is the slow half; 0 means uncapped)")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -578,7 +607,8 @@ def main() -> int:
 
     print("\n--- Training Detective (port_scan vs benign) on CIC IoT 2023 ---")
     detective_model, detective_metrics = train_detective(
-        by_capture, args.sample_per_capture, SEED)
+        by_capture, args.sample_per_capture, SEED,
+        args.detective_limit or None)
 
     if bouncer_model is None and detective_model is None:
         print("\nNeither lane could be trained on this capture set. "
