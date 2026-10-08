@@ -82,7 +82,14 @@ DISK
 
         rm -rf data/external/ciciot2023
 
-End state: the selected captures in data/external/ciciot2023/, ready for
+End state: one subdirectory per family — the family folder IS the label, since
+nothing inside a capture says which family it belongs to, so the folder is
+preserved rather than flattened:
+
+    data/external/ciciot2023/Benign_Final/BenignTraffic.pcap
+    data/external/ciciot2023/DDoS-UDP_Flood/<capture>.pcap
+
+ready for
 
     python scripts/run_ciciot2023_experiment.py
 """
@@ -317,16 +324,22 @@ def _download_families(
         if not files:
             print(f"  {folder}: no downloadable files, skipping")
             continue
+        # The family folder IS the label: every capture in DDoS-UDP_Flood is a
+        # flood, every capture in Benign_Final is benign, and nothing inside a
+        # capture says which it is. Flattening these into one directory would
+        # leave the loader inferring the label from a filename, which holds
+        # only by coincidence. So the folder is preserved.
+        family_dir = DEST_DIR / Path(folder.rstrip("/")).name
         for name in sorted(files)[:per_family]:
-            dest = DEST_DIR / Path(name).name
+            dest = family_dir / Path(name).name
             if dest.exists() and dest.stat().st_size > 0:
-                print(f"  {Path(name).name} already present, skipping")
+                print(f"  {dest.relative_to(DEST_DIR)} already present, skipping")
                 continue
             size = _fetch(opener, name, dest)
             if size < 0:
                 return 1
             fetched += 1
-            print(f"  {folder} -> {dest.name} ({size / 1_048_576:.1f} MB) [{purpose}]")
+            print(f"  {dest.relative_to(DEST_DIR)} ({size / 1_048_576:.1f} MB) [{purpose}]")
 
     if not fetched:
         print("nothing fetched (already complete?)")
@@ -344,8 +357,13 @@ def _copy_local(source: Path) -> int:
         print(f"error: no captures under {source}", file=sys.stderr)
         return 1
     for path in found:
-        shutil.copy2(path, DEST_DIR / path.name)
-        print(f"  copied {path.name}")
+        # Keep each capture's own folder name, for the reason given in
+        # _download_families: the folder is the label.
+        family = path.parent.name if path.parent != source else ""
+        dest = (DEST_DIR / family / path.name) if family else (DEST_DIR / path.name)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest)
+        print(f"  copied {dest.relative_to(DEST_DIR)}")
     return 0
 
 
