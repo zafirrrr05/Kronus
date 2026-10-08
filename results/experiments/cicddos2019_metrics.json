@@ -1,0 +1,252 @@
+{
+  "experiment": "cicddos2019",
+  "status": "COMPLETE",
+  "verdict": "BOUNCER_REPORTABLE",
+  "timestamp": "2026-10-08T06:02:53.858622+00:00",
+  "elapsed_seconds": 1764.63,
+  "dataset": {
+    "source": "CIC-DDoS2019 (Canadian Institute for Cybersecurity, UNB)",
+    "url": "https://www.unb.ca/cic/datasets/ddos-2019.html",
+    "day_archives": {
+      "CSV-01-12": "CSV-01-12.zip",
+      "CSV-03-11": "CSV-03-11.zip"
+    },
+    "stride": 32,
+    "synthetic_hosts": false,
+    "synthetic_hosts_note": "Source IP, Source Port, Destination IP, Destination Port and a wall-clock microsecond Timestamp are all real in this release, so nothing is reconstructed. The Bouncer's 2-second window is keyed by the real source_ip and a 2-second window is a real 2 seconds.",
+    "label_mapping": {
+      "BENIGN": "normal (Label.BENIGN)",
+      "DrDoS_* / bare family names": "dos (Label.FLOOD) \u2014 LDAP, MSSQL, NetBIOS, Portmap, SNMP, SSDP, DNS, NTP, TFTP reflection/amplification",
+      "UDP / UDPLag / Syn / WebDDoS": "dos (Label.FLOOD) \u2014 direct floods",
+      "_dropped": "any label outside that vocabulary is dropped and counted in day_survey[<day>].raw_labels, never assumed to be a flood"
+    },
+    "detective_skipped_reason": "Every labelled attack family in CIC-DDoS2019 is volumetric. There is no port-scan or lateral-movement class, so the Detective has no attack class to train on. The mirror image of Experiment D, which was Detective-only because a tunnel capture has no flood."
+  },
+  "bouncer": {
+    "n": 5057,
+    "n_flood": 3960,
+    "n_benign": 1097,
+    "accuracy": 0.9986,
+    "precision": 1.0,
+    "recall": 0.9982,
+    "f1": 0.9991,
+    "auc": 0.9998,
+    "confusion_matrix": [
+      [
+        1097,
+        0
+      ],
+      [
+        7,
+        3953
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "benign",
+      "flood"
+    ],
+    "n_train": 10266,
+    "n_train_flood": 8040,
+    "n_train_benign": 2226,
+    "train_seconds": 0.211,
+    "feature_medians": {
+      "event_rate": {
+        "flood": 273.0,
+        "benign": 0.5
+      },
+      "byte_rate": {
+        "flood": 374513.5,
+        "benign": 106.0
+      },
+      "dest_port_entropy": {
+        "flood": 9.0607,
+        "benign": 0.0
+      },
+      "unique_dest_count": {
+        "flood": 1.0,
+        "benign": 1.0
+      },
+      "avg_duration_ms": {
+        "flood": 76.3646,
+        "benign": 32.0
+      },
+      "same_dest_ratio": {
+        "flood": 1.0,
+        "benign": 1.0
+      }
+    },
+    "component": "bouncer",
+    "training_origin": "cicddos2019",
+    "dataset_source": "CIC-DDoS2019 (Canadian Institute for Cybersecurity, UNB)",
+    "dataset_url": "https://www.unb.ca/cic/datasets/ddos-2019.html",
+    "model_type": "XGBoost + Temperature Scaling (trained from scratch)",
+    "task": "binary volumetric DDoS flood vs benign classification",
+    "synthetic_hosts": false,
+    "seed": 42,
+    "train_ratio": 0.67,
+    "stride": 32,
+    "features": [
+      "event_rate",
+      "byte_rate",
+      "dest_port_entropy",
+      "unique_dest_count",
+      "avg_duration_ms",
+      "same_dest_ratio"
+    ],
+    "cross_day": [
+      {
+        "trained_on": [
+          "CSV-03-11"
+        ],
+        "tested_on": "CSV-01-12",
+        "n_train": 7763,
+        "n_test": 7560,
+        "n": 7560,
+        "n_flood": 6000,
+        "n_benign": 1560,
+        "accuracy": 0.9988,
+        "precision": 1.0,
+        "recall": 0.9985,
+        "f1": 0.9992,
+        "auc": 0.9996,
+        "confusion_matrix": [
+          [
+            1560,
+            0
+          ],
+          [
+            9,
+            5991
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      },
+      {
+        "trained_on": [
+          "CSV-01-12"
+        ],
+        "tested_on": "CSV-03-11",
+        "n_train": 7560,
+        "n_test": 7763,
+        "n": 7763,
+        "n_flood": 6000,
+        "n_benign": 1763,
+        "accuracy": 0.999,
+        "precision": 1.0,
+        "recall": 0.9987,
+        "f1": 0.9993,
+        "auc": 0.9993,
+        "confusion_matrix": [
+          [
+            1763,
+            0
+          ],
+          [
+            8,
+            5992
+          ]
+        ],
+        "confusion_matrix_labels": [
+          "benign",
+          "flood"
+        ]
+      }
+    ],
+    "day_survey": {
+      "CSV-01-12": {
+        "rows_loaded": 1184889,
+        "flood_rows": 1183323,
+        "benign_rows": 1560,
+        "benign_fraction": 0.001317,
+        "flood_source_hosts": 2,
+        "benign_source_hosts": 132,
+        "shared_source_hosts": 0,
+        "benign_rows_dropped_on_flood_hosts": 6,
+        "shared_source_hosts_before_exclusion": 1,
+        "raw_labels": {
+          "TFTP": 627575,
+          "DrDoS_SNMP": 161246,
+          "DrDoS_NetBIOS": 127909,
+          "DrDoS_UDP": 97957,
+          "DrDoS_SSDP": 81581,
+          "Syn": 49448,
+          "DrDoS_NTP": 37592,
+          "BENIGN": 1566,
+          "WebDDoS": 15
+        },
+        "capture_start": "2018-12-01 09:17:11.183810",
+        "capture_end": "2018-12-01 17:16:20.064683"
+      },
+      "CSV-03-11": {
+        "rows_loaded": 636394,
+        "flood_rows": 634619,
+        "benign_rows": 1763,
+        "benign_fraction": 0.00277,
+        "flood_source_hosts": 2,
+        "benign_source_hosts": 205,
+        "shared_source_hosts": 0,
+        "benign_rows_dropped_on_flood_hosts": 12,
+        "shared_source_hosts_before_exclusion": 1,
+        "raw_labels": {
+          "MSSQL": 180846,
+          "Syn": 152859,
+          "UDP": 120842,
+          "NetBIOS": 114313,
+          "LDAP": 59852,
+          "Portmap": 5844,
+          "BENIGN": 1775,
+          "UDPLag": 63
+        },
+        "capture_start": "2018-11-03 09:18:16.964447",
+        "capture_end": "2018-11-03 17:36:17.519669"
+      }
+    },
+    "day_counts": {
+      "CSV-01-12": {
+        "flood": 6000,
+        "benign": 1560
+      },
+      "CSV-03-11": {
+        "flood": 6000,
+        "benign": 1763
+      }
+    },
+    "days_used": [
+      "CSV-01-12",
+      "CSV-03-11"
+    ],
+    "days_excluded_as_too_thin": {},
+    "min_rows_per_class_per_day": 200,
+    "weight_artifacts": [
+      "/Users/manavjobanputra/kronos/models/experiments/cicddos2019/bouncer/bouncer.json",
+      "/Users/manavjobanputra/kronos/models/experiments/cicddos2019/bouncer/calibration.json"
+    ]
+  },
+  "label_quality": {
+    "rows": 1457028,
+    "distinct_vectors": 404186,
+    "ambiguous_vectors": 3,
+    "rows_in_ambiguous_vectors": 25,
+    "ambiguous_row_fraction": 0.0,
+    "deterministic_ceiling": 1.0,
+    "by_category": {
+      "dos": 1454352,
+      "normal": 2676
+    }
+  },
+  "host_overlap": {
+    "attack_hosts": 3,
+    "benign_hosts": 243,
+    "shared_hosts": 2,
+    "attack_hosts_that_also_send_benign": [
+      "192.168.50.1",
+      "192.168.50.4"
+    ]
+  },
+  "weight_verification": {
+    "cicddos2019_bouncer_loadable": true
+  }
+}
