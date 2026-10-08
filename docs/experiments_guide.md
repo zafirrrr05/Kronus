@@ -1110,7 +1110,7 @@ differ between runs are `timestamp`, `train_seconds` and `elapsed_seconds`.
 | Download | `python scripts/download_cicddos2019.py` — **form-gated**, see below |
 | Archives | `CSV-01-12.zip` (capture 2018-12-01), `CSV-03-11.zip` (capture 2018-11-03) |
 | Rows | 38,282,659 + 20,364,525 = **58,647,184** across the two archives |
-| Labels | `BENIGN`, `DrDoS_{DNS,LDAP,MSSQL,NetBIOS,NTP,SNMP,SSDP,UDP}`, `Syn`, `TFTP`, `UDP-lag`, `WebDDoS`, `LDAP`, `MSSQL`, `Portmap`, `UDP`, `UDPLag` |
+| Labels | `BENIGN`, plus 13 attack families written either as `DrDoS_<family>` or by bare name: LDAP, MSSQL, NetBIOS, Portmap, SNMP, SSDP, UDP, UDPLag, Syn, TFTP, WebDDoS, DNS, NTP |
 | Schema | 88 columns, CICFlowMeter — the same family as CIC-IDS2017, which is the trap this loader guards against |
 
 ### Why CIC-DDoS2019, and Why Only the Bouncer Trains
@@ -1133,16 +1133,19 @@ fetches each archive. **No personal details live in the repository** — the for
 values come from command-line flags or `KRONUS_CIC_*` environment variables,
 because this repo is public and a committed name and email is a leaked one.
 
-The transfer is also **not resumable**: `download.php` returns no
-`Accept-Ranges`, so an interrupted fetch cannot continue. That happened. The
-`01-12` archive here is a **salvage of an interrupted download**: the ZIP is a
-stream of independently-compressed members, so the 8 members whose bytes
-arrived complete were carried into a rebuilt, valid archive and the incomplete
-tail was discarded. **`CSV-01-12.zip` therefore holds 8 members, and members
-beyond the transfer's stopping point are absent** — this is a partial day, not
-the publisher's full manifest, and it is disclosed rather than presented as
-whole. `CSV-03-11.zip` (7 members) downloaded complete and validates with
-`testzip()`.
+The transfer is also **not resumable**: `download_cicddos2019.py` issues a plain
+GET with no `Range` header and deletes its `.part` file on failure, so an
+interrupted fetch cannot continue. That happened. The `01-12` archive here is a
+**salvage of an interrupted download**: the ZIP is a stream of
+independently-compressed members, so the members whose bytes arrived complete
+were carried into a rebuilt, valid archive and the incomplete tail was
+discarded. **`CSV-01-12.zip` therefore holds 8 members, and members beyond the
+transfer's stopping point are absent** — this is a partial day, not the
+publisher's full manifest, and it is disclosed rather than presented as whole.
+`CSV-03-11.zip` (7 members) downloaded complete. Those member counts are a
+record of the one-time fetch, not of a committed artifact; `_verify_archives()`
+checks only that each archive is a readable zip holding at least one CSV, so the
+per-day `raw_labels` census below is the durable record of what arrived.
 
 What was actually trained on is not asserted here: the metrics carry a per-day
 `raw_labels` census, so the exact family mix is visible in
@@ -1180,13 +1183,14 @@ it, were corrected — the conclusion survived, the stated reason did not.
 
 #### 2. The flood comes from one host
 
-Across all 58.6M rows, **exactly two source IPs ever carry a non-benign label**,
-and one of them is the victim replying. The attacker is a single host,
-`172.16.0.5`, on both days. The benign traffic, by contrast, comes from a real
-lab subnet (`192.168.50.6/.7/.8/.9/.254`) plus genuine internet peers
-(`74.208.236.171`, `172.217.10.98` = Google). This is a lab capture of a
-single-source flood, and it is the reason the scores below are near-perfect —
-see the generalisation caveat further down.
+**Two source IPs carry a non-benign label in each archive, three across both
+days** (`day_survey[*].flood_source_hosts` = 2; `host_overlap.attack_hosts` = 3,
+the union over both days) — the attacker is a single host, `172.16.0.5`, on both
+days, and the extra host is the victim replying. The benign traffic, by contrast,
+comes from many distinct hosts (`day_survey[*].benign_source_hosts`: 132 and 205;
+`host_overlap.benign_hosts`: 243 in union) on a real lab subnet. This is a lab
+capture of a single-source flood, and it is the reason the scores below are
+near-perfect — see the generalisation caveat further down.
 
 #### 3. The victim host also sends benign traffic
 
@@ -1194,14 +1198,14 @@ The module docstring originally claimed that because the source IPs are real,
 the "contaminated window" class of Experiment F was absent here. Measuring it
 showed that is **nearly** true, and the near-miss matters: on each day exactly
 one host — the victim, `192.168.50.1` on `01-12` and `192.168.50.4` on `03-11` —
-appears as a source on both attack and benign rows, carrying 12,736 flood rows
-against 330 benign on the first day and 8,079 against 375 on the second. Those
-705 benign rows (0.66% of the benign class) sit in the same 2-second windows as
-that host's own flood.
+appears as a source on both attack and benign rows. A one-time scan of the full
+archives put roughly 0.7% of the benign class in the same 2-second windows as
+that host's own flood; the committed metrics record the same overlap from the
+strided load, where `shared_source_hosts_before_exclusion` is 1 on each day.
 
 Rather than soften the claim, the runner **drops exactly those rows** before
 building the pools, so "no benign window contains flood traffic" is true instead
-of nearly true, and it counts the drop in the survey
+of nearly true, and it counts the drop in the survey and prints it per day
 (`benign_rows_dropped_on_flood_hosts`: 6 rows on `01-12`, 12 on `03-11` at
 stride 32). The separate `host_overlap` block still reports the *raw,
 pre-exclusion* overlap — 3 attack hosts, 243 benign hosts, 2 shared, naming
@@ -1260,8 +1264,10 @@ ratio the model is asked to learn.
 | `CSV-03-11` | 636,394 | 6,000 | 1,763 |
 
 **The pool ratio is not the dataset's prevalence, and the difference is
-disclosed.** Benign is genuinely rare here — 0.130% of `01-12` and 0.280% of
-`03-11`, a natural flood:benign ratio of 767:1 and 357:1. Training on that would
+disclosed.** Benign is genuinely rare here — 0.13% of the loaded `01-12` rows
+and 0.28% of `03-11` (`day_survey[*].benign_fraction`: 0.001317 and 0.00277), a
+natural flood:benign ratio of **758:1** and **360:1** (`flood_rows` /
+`benign_rows`: 1,183,323/1,560 and 634,619/1,763). Training on that would
 make a binary metric meaningless, so flood is capped at 6,000 rows per day
 (`--bouncer-limit`), giving a **3.6:1** pool. Every precision and recall figure
 below is measured at 3.6:1, not at natural prevalence. The consequence is
@@ -1510,7 +1516,7 @@ measurement path.
 # Form-gated. Pass your own registration details, or set KRONUS_CIC_FIRST_NAME,
 # KRONUS_CIC_LAST_NAME, KRONUS_CIC_EMAIL, KRONUS_CIC_INSTITUTION,
 # KRONUS_CIC_JOB_TITLE and KRONUS_CIC_COUNTRY. No personal details are committed.
-# The publisher's stream sends no Accept-Ranges, so it cannot be resumed:
+# The downloader implements no resume (plain GET, .part deleted on failure):
 # fetch it in one go or start over.
 python scripts/download_cicddos2019.py \
   --first-name ... --last-name ... --email ... \

@@ -276,7 +276,9 @@ def collect_bouncer(stride: int, limit: int | None) -> tuple[dict, dict, dict]:
             benign[stem] = day_benign
         print(f"  {stem}: {day_survey.get('rows_loaded', 0):,} rows -> "
               f"{len(day_flood):,} flood / {len(day_benign):,} benign "
-              f"({day_survey.get('benign_fraction', 0):.3%} benign)")
+              f"({day_survey.get('benign_fraction', 0):.3%} benign, "
+              f"{day_survey.get('benign_rows_dropped_on_flood_hosts', 0)} "
+              f"benign rows dropped on flood hosts)")
 
     return flood, benign, survey
 
