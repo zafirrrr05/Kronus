@@ -1302,8 +1302,9 @@ other, which is the stronger test — nothing from the test day is in training:
 | `CSV-03-11` | `CSV-01-12` | 0.9992 | 0.9996 |
 | `CSV-01-12` | `CSV-03-11` | 0.9993 | 0.9993 |
 
-Unlike Experiment F — where cross-day F1 collapsed from 0.9925 to 0.8681 when
-the unseen day was the slow family — the score here does not degrade at all.
+Unlike Experiment F — where cross-day F1 collapsed from **0.9985** to **0.8681**
+when the unseen day was the slow family (0.9925 is F's *within-day* figure, not
+its cross-day baseline) — the score here does not degrade at all.
 That is not a stronger model; it is an easier dataset, and the next section says
 why.
 
