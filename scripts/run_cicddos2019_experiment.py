@@ -224,9 +224,9 @@ def _collect_day(
     # `192.168.50.4` on 03-11), which appears as a source on both attack and
     # benign rows. Its benign rows land in the same 2-second windows as its own
     # flood, so keeping them would ask the Bouncer to call a window benign that
-    # is full of flood. They are 0.66% of the benign class, so dropping them
-    # costs nothing and makes "no benign window contains flood traffic" true
-    # rather than nearly true. Both the drop and the overlap it removes are
+    # is full of flood. They are well under 1% of the benign class, so dropping
+    # them costs nothing and makes "no benign window contains flood traffic"
+    # true rather than nearly true. Both the drop and the overlap it removes are
     # counted here and reported in the metrics.
     hosts_before_exclusion = set(benign_sources)
     contaminated = sum(1 for src in benign_sources if src in flood_hosts)

@@ -40,9 +40,11 @@ Destination Port and a wall-clock Timestamp. So:
     Here the overlap is real but tiny, and measured rather than assumed: the
     flood comes from the attacker (`172.16.0.5`) plus the victim
     (`192.168.50.1` on 01-12, `192.168.50.4` on 03-11), and only the victim
-    also carries benign rows — 330 of them on 01-12 and 375 on 03-11, 0.66% of
-    benign in each case. The runner drops exactly those rows so that no benign
-    window contains flood traffic, and reports the drop in the metrics.
+    also carries benign rows — about 0.7% of the benign class on each day by a
+    one-time scan of the full archives. The runner drops exactly those rows so
+    that no benign window contains flood traffic, and reports the drop in the
+    metrics (`benign_rows_dropped_on_flood_hosts`, alongside
+    `shared_source_hosts_before_exclusion` for the raw pre-exclusion overlap).
     `host_overlap_report` measures the overlap rather than asserting it.
 
 THE CLOCK IS REAL, AS IN EXPERIMENT F
