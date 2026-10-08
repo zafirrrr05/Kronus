@@ -1,8 +1,8 @@
 {
   "experiment": "ciciot2023",
   "status": "COMPLETE",
-  "timestamp": "2026-10-08T09:23:46.688080+00:00",
-  "notes": "The first experiment in this repository where both lanes train: the release carries volumetric floods and recon scans against the same benign baseline. Rows are flows this repository extracted from the publisher's packet captures, not rows the publisher published \u2014 see dataset.extraction and dataset.flow_definition.",
+  "timestamp": "2026-10-08T09:29:57.368797+00:00",
+  "notes": "Both lanes train here, but that is not the first: Experiments A, B and C also trained both. The first is the *rows*. Every other experiment in this repository trained on flow records the publisher shipped (or reconstructed hosts from a table that carried none); these rows are flows this repository extracted from the publisher's packet captures, so the addresses, ports and timestamps are the capture's own and the grouping into flows is ours \u2014 see dataset.extraction and dataset.flow_definition.",
   "dataset": {
     "source": "CIC IoT 2023 (Canadian Institute for Cybersecurity, UNB)",
     "url": "https://www.unb.ca/cic/datasets/iotdataset-2023.html",
@@ -137,7 +137,7 @@
     "n_train_benign_before_balance": 131463,
     "n_test_flood_before_balance": 40674,
     "n_test_benign_before_balance": 65731,
-    "train_seconds": 0.323,
+    "train_seconds": 0.322,
     "weight_artifacts": [
       "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/bouncer/bouncer.json",
       "/Users/manavjobanputra/kronos/models/experiments/ciciot2023/bouncer/calibration.json"
@@ -183,7 +183,7 @@
     "train_windows": 498,
     "test_windows": 488,
     "n_uncertain_verdicts": 39,
-    "train_seconds": 39.827,
+    "train_seconds": 40.718,
     "accuracy": 0.8893,
     "majority_class_accuracy": 0.5,
     "precision": 0.9037,

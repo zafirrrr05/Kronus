@@ -917,10 +917,13 @@ def main() -> int:
         "status": "COMPLETE",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "notes": (
-            "The first experiment in this repository where both lanes train: the "
-            "release carries volumetric floods and recon scans against the same "
-            "benign baseline. Rows are flows this repository extracted from the "
-            "publisher's packet captures, not rows the publisher published — see "
+            "Both lanes train here, but that is not the first: Experiments A, B "
+            "and C also trained both. The first is the *rows*. Every other "
+            "experiment in this repository trained on flow records the publisher "
+            "shipped (or reconstructed hosts from a table that carried none); "
+            "these rows are flows this repository extracted from the publisher's "
+            "packet captures, so the addresses, ports and timestamps are the "
+            "capture's own and the grouping into flows is ours — see "
             "dataset.extraction and dataset.flow_definition."
         ),
         "dataset": {
