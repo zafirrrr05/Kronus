@@ -117,13 +117,40 @@ DATASET_SOURCE = "CIC IoT 2023 (Canadian Institute for Cybersecurity, UNB)"
 
 TRAIN_RATIO = 0.67
 SEED = 42
-DEFAULT_SAMPLE_PER_CAPTURE = 40_000
+
+# Load every flow. This is None on purpose, and it is the single most important
+# constant in this file.
+#
+# Both lanes derive their features over a 2-second window — the Bouncer's
+# FlowFeaturizer (event_rate, byte_rate, same_dest_ratio, unique_dest_count) and
+# the Detective's WindowedGraphBuilder (which emits a graph per 2 s bucket). A
+# row stride therefore does not merely take a smaller sample: it moves the rows
+# apart in time until each one sits alone in its own window. Measured on these
+# captures, an evenly spaced 1-in-13 stride left 3.3 s (benign) and 8.9 s
+# (port scan) between consecutive sampled flows, and 89.5%/64.1% of the
+# resulting graph windows held a single edge — a flood of one-edge graphs with
+# no structure for the GAT to read, and near-constant Bouncer window features.
+# These captures span 9-25 hours, so the stride is far coarser in time than it
+# looks in index space.
+#
+# The caps that bound this run are applied to what is *derived* instead: the
+# window pool below, after the stream has been read at full density. Set this
+# only to fit an unusually large capture into memory, and read the resulting
+# metrics as sampled-window numbers rather than capture numbers.
+DEFAULT_SAMPLE_PER_CAPTURE = None
 
 # The Detective trains at batch 4 in pure NumPy, so its window pool is capped
 # well below the Bouncer's: 40k windows a side is hours of GradientTape-free
 # backprop for a number that a 10k stride estimates just as well. The Bouncer
 # keeps the larger pool because XGBoost over six columns is cheap.
 DEFAULT_DETECTIVE_LIMIT = 10_000
+
+# The earlier external runners trained for 4 epochs; this one matches them, so
+# the numbers stay comparable across experiments. Measured on these captures the
+# loss has already flattened by epoch 9-12, so more epochs would buy a few
+# points of fit rather than a different result — see the cadence note below for
+# what the limiting factor actually is.
+DEFAULT_DETECTIVE_EPOCHS = 4
 
 # A score computed from a handful of flows is not a measurement. Below these
 # counts the runner refuses to write metrics rather than reporting a number the
@@ -233,12 +260,12 @@ def _evenly_spaced(total: int, target: int | None) -> list[int]:
     return [min(total - 1, int(i * step)) for i in range(target)]
 
 
-def _cap_pair(rows: list, times: list, limit: int | None) -> tuple[list, list]:
-    """Cap one window pool, keeping rows and times aligned."""
-    keep = _evenly_spaced(len(rows), limit)
-    if len(keep) == len(rows):
-        return rows, times
-    return [rows[i] for i in keep], [times[i] for i in keep]
+def _cap_list(items: list, limit: int | None) -> list:
+    """Cap one window pool with an evenly spaced stride, never a prefix."""
+    keep = _evenly_spaced(len(items), limit)
+    if len(keep) == len(items):
+        return items
+    return [items[i] for i in keep]
 
 
 # --- Bouncer ----------------------------------------------------------------
@@ -360,13 +387,14 @@ def _build_graph_snapshots(rows: list, times: list, label: Label) -> list[tuple]
 
 
 def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int,
-                    limit: int | None) -> tuple[DetectiveModel | None, dict]:
+                    limit: int | None, epochs: int = 4
+                    ) -> tuple[DetectiveModel | None, dict]:
     """Train the Detective on port_scan vs benign graph windows.
 
-    `limit` caps each class's window pool per side. It exists because the GAT
-    here is pure NumPy at batch 4: an unbounded pool of a few hundred thousand
-    windows is hours of training for a bounded-sample experiment. The cap is an
-    evenly spaced stride, so the pool still spans the capture.
+    `limit` caps each class's *window* pool per side, applied after the full
+    stream has been windowed. It exists because the GAT here is pure NumPy at
+    batch 4, so a few hundred thousand windows is hours of training for a
+    bounded-sample experiment.
     """
     probe = _pool(by_capture, "probe")
     benign = _pool(by_capture, "normal")
@@ -389,18 +417,22 @@ def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int,
             "n_probe_test": len(p_te), "n_benign_test": len(b_te),
         }
 
-    (p_tr, p_tr_t), (b_tr, b_tr_t) = (
-        _cap_pair(p_tr, p_tr_t, limit), _cap_pair(b_tr, b_tr_t, limit))
-    (p_te, p_te_t), (b_te, b_te_t) = (
-        _cap_pair(p_te, p_te_t, limit), _cap_pair(b_te, b_te_t, limit))
+    # Window the FULL stream, then cap the windows that come out. Capping the
+    # rows first would put them seconds apart and leave each alone in its own
+    # 2-second bucket — a pile of single-edge graphs. The cap is per class so
+    # the two classes stay balanced under it.
+    benign_train = _cap_list(_build_graph_snapshots(b_tr, b_tr_t, Label.BENIGN), limit)
+    probe_train = _cap_list(_build_graph_snapshots(p_tr, p_tr_t, Label.PORT_SCAN), limit)
+    benign_test = _cap_list(_build_graph_snapshots(b_te, b_te_t, Label.BENIGN), limit)
+    probe_test = _cap_list(_build_graph_snapshots(p_te, p_te_t, Label.PORT_SCAN), limit)
 
-    train_snaps = (_build_graph_snapshots(b_tr, b_tr_t, Label.BENIGN)
-                   + _build_graph_snapshots(p_tr, p_tr_t, Label.PORT_SCAN))
-    test_snaps = (_build_graph_snapshots(b_te, b_te_t, Label.BENIGN)
-                  + _build_graph_snapshots(p_te, p_te_t, Label.PORT_SCAN))
+    train_snaps = benign_train + probe_train
+    test_snaps = benign_test + probe_test
 
-    print(f"  Detective train windows: {len(train_snaps)}")
-    print(f"  Detective test  windows: {len(test_snaps)}")
+    print(f"  Detective train windows: {len(train_snaps)} "
+          f"({len(benign_train)} benign + {len(probe_train)} port_scan)")
+    print(f"  Detective test  windows: {len(test_snaps)} "
+          f"({len(benign_test)} benign + {len(probe_test)} port_scan)")
 
     if not train_snaps or not test_snaps:
         return None, {
@@ -412,7 +444,7 @@ def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int,
 
     started = time.perf_counter()
     model = DetectiveModel(rng=np.random.default_rng(seed))
-    epochs, batch_size = 4, 4
+    batch_size = 4
     for epoch in range(epochs):
         rng = np.random.default_rng(seed + epoch)
         order = rng.permutation(len(train_snaps))
@@ -469,6 +501,11 @@ def train_detective(by_capture: dict, sample_per_capture: int | None, seed: int,
         "n_test_benign": len(b_te),
         "n_test_probe": len(p_te),
         "window_pool_limit_per_class": limit,
+        "epochs": epochs,
+        "train_windows_benign": len(benign_train),
+        "train_windows_probe": len(probe_train),
+        "test_windows_benign": len(benign_test),
+        "test_windows_probe": len(probe_test),
         "train_windows": len(train_snaps),
         "test_windows": len(test_snaps),
         "n_uncertain_verdicts": n_uncertain,
@@ -563,10 +600,16 @@ def _verification_row():
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample-per-capture", type=int, default=DEFAULT_SAMPLE_PER_CAPTURE,
-                        help="max flows kept per capture (evenly spaced, not a prefix)")
+                        help="max flows kept per capture (evenly spaced, not a prefix). "
+                             "Leave unset: both lanes compute their features over 2-second "
+                             "windows, and striding the rows apart in time empties those "
+                             "windows. Only set this to fit a capture into memory.")
     parser.add_argument("--detective-limit", type=int, default=DEFAULT_DETECTIVE_LIMIT,
                         help="max graph windows per class per side for the Detective "
                              "(the NumPy GAT is the slow half; 0 means uncapped)")
+    parser.add_argument("--epochs", type=int, default=DEFAULT_DETECTIVE_EPOCHS,
+                        help="Detective training epochs, matching the earlier external "
+                             "runners at 4 by default")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -608,7 +651,7 @@ def main() -> int:
     print("\n--- Training Detective (port_scan vs benign) on CIC IoT 2023 ---")
     detective_model, detective_metrics = train_detective(
         by_capture, args.sample_per_capture, SEED,
-        args.detective_limit or None)
+        args.detective_limit or None, args.epochs)
 
     if bouncer_model is None and detective_model is None:
         print("\nNeither lane could be trained on this capture set. "
