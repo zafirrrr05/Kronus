@@ -151,6 +151,16 @@ KRONUS provides six completely independent ML experiment pipelines with separate
    - Trained weights: `models/experiments/cicddos2019/bouncer/`
    - Metrics: `results/experiments/cicddos2019_metrics.json` (Bouncer F1: 0.9991, 1,821,283 rows loaded at stride 32)
 
+8. **Experiment H — CIC IoT 2023 (External Dataset) — the first rows this repository builds itself:**
+   - Trains **both** lanes on [CIC IoT 2023](https://www.unb.ca/cic/datasets/iotdataset-2023.html) (UNB/CIC): Bouncer on the volumetric floods (`DDoS-UDP_Flood`, `Mirai-udpplain`), Detective on `Recon-PortScan`, against `Benign_Final`. Four of the release's 34 family captures, ~6.3 GB, **442,422 flows extracted from 34,581,737 packets**.
+   - **Bouncer F1 0.8036** (AUC 0.8563, recall 0.8295) — and it is a **cross-flood-family** score, not a within-capture one: the capture-holdout split trains on `Mirai-udpplain` and tests on `DDoS-UDP_Flood`, which is 5x larger and differently shaped. **Detective F1 0.8884** (precision 0.9037) against a **0.5** majority baseline, at a 30-second graph window.
+   - **The rows are ours, and the section says so.** The publisher's per-family CSVs carry 39–40 columns and **no IP, port or timestamp** — four of the Bouncer's six features could not be built from them without inventing data, which is the wall Experiment E hit. The loader reads the packet captures instead and groups them into bidirectional 5-tuple flows itself (`dataset.flow_definition` records the idle/active timeouts). Addresses, ports and timestamps are the capture's own; the flow definition is this repository's choice.
+   - **Two measured corrections, both disclosed.** (1) Thinning each capture to 40,000 rows by an evenly spaced stride *looked* like bounded sampling but was not: both lanes read features off a 2-second window and these captures span 9–25 hours, so the stride left 89.5% of benign graph windows holding a single edge and 392 of 393 test verdicts came back `UNCERTAIN`. The runner now reads every flow and caps the *derived* windows instead. (2) The production 2-second window **cannot see a port scan spread over 24.75 hours** — at that cadence the median ports contacted is identical between benign and scan windows (ratio 1.00) — so the Detective trains at 30 s, the choice made by the same cadence sweep Experiment F introduced and shipped in `cadence_sweep` in the metrics (AUC 0.9915, F1 0.9280, port ratio 11.8x at 30 s).
+   - **Class balancing is recorded, not silent.** The four captures are wildly unequal (7,702 flood rows against 131,463 benign), and training on them as split had the Bouncer calling almost everything benign — recall 0.133, F1 0.2344. Striding the majority down to the minority raised that to **0.8295 / 0.8036** with AUC essentially unchanged (0.8603 → 0.8563), which is what shows the imbalance was a threshold artefact rather than a shortage of signal. Both lanes ship `class_balanced: true` with their pre-balance counts.
+   - Run command: `python scripts/run_ciciot2023_experiment.py` (aborts cleanly, with no fabricated metrics, if data is absent)
+   - Trained weights: `models/experiments/ciciot2023/{bouncer,detective}/`
+   - Metrics: `results/experiments/ciciot2023_metrics.json` (Bouncer F1: 0.8036, Detective F1: 0.8884)
+
 ---
 
 ## Production readiness

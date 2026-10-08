@@ -1372,6 +1372,249 @@ differ between runs are `timestamp`, `train_seconds` and `elapsed_seconds`.
 
 ---
 
+## Experiment H — CIC IoT 2023 External Dataset
+
+### Dataset Source
+
+| Property | Value |
+|---|---|
+| Dataset | CIC IoT 2023 (IoT Dataset 2023) |
+| Source | Canadian Institute for Cybersecurity, University of New Brunswick ([dataset page](https://www.unb.ca/cic/datasets/iotdataset-2023.html)) |
+| Release | 34 family folders of packet captures, plus a CSV per family |
+| Download | `python scripts/download_ciciot2023.py` — **form-gated**, see below |
+| Captures used | 4, one per family: `Benign_Final`, `Recon-PortScan`, `DDoS-UDP_Flood`, `Mirai-udpplain` (~6.3 GB) |
+| Packets read | 34,581,737 |
+| Rows | **442,422 flows — extracted by this repository**, not published |
+| Lanes trained | Bouncer + Detective |
+
+### The Rows Are Ours, And That Is The Point
+
+This is the first experiment in the repository whose rows are **not** the
+publisher's. Every other experiment trained on flow records the publisher
+shipped — CIC-IDS2017's CICFlowMeter CSVs, CIC-DDoS2019's 88-column archives,
+CSE-CIC-IDS2018's per-day tables — or, where the table carried no addresses,
+on hosts reconstructed from what little it did carry.
+
+That option does not exist here. The release also ships a CSV per family, and
+both of its variants were measured before rejecting them: the per-family form
+has 39 columns and **no label column**, and the merged form has 40 columns with
+a `Label`. Neither carries a source or destination IP, a port, or a timestamp.
+Four of the Bouncer's six features are rates over a 2-second window keyed by
+source IP; without addresses and times they could only be invented, which is
+the wall Experiment E hit and the opposite of what `unsw_nb15.py` next door
+does. So the loader reads the packet captures instead, and every address, port
+and timestamp in the metrics is the capture's own.
+
+What is ours is the **grouping of those packets into flows**: a bidirectional
+5-tuple with endpoints sorted, a 30 s idle timeout and a 120 s active timeout,
+the source being the endpoint that sent the first packet and the timestamp the
+first packet's time. All of that is stated in `dataset.flow_definition` rather
+than left implicit. This is a genuine difference in kind from the other
+experiments and the numbers below should be read with it in mind: a flow
+definition we chose is one more way the result could differ from a
+publisher-supplied table.
+
+### Data Acquisition — Form-Gated, Bounded, Four Families
+
+UNB gates the captures behind a registration form (`insert.php`, six fields),
+the same mechanism as CIC-DDoS2019. The downloader posts it, keeps the returned
+session cookie, then walks the browse tree. **No personal details live in the
+repository** — values come from flags or `KRONUS_CIC_*` environment variables.
+
+The walk found 34 family folders, of which 25 map onto a lane. Four were
+fetched, one capture each, deliberately: the release is tens of gigabytes and
+the machine has 31 GiB free. The families were chosen to cover both lanes —
+`Benign_Final` as the shared negative, `Recon-PortScan` for the Detective's
+positive, and two structurally different volumetric floods (`DDoS-UDP_Flood`,
+`Mirai-udpplain`) for the Bouncer's positive.
+
+**The family folder is the label and nothing inside a capture says which family
+it is.** Flattening the captures into one directory would therefore leave the
+loader inferring the label from a filename, which holds only by coincidence;
+the downloader preserves the folder and the loader reads the label from it. A
+capture in an unrecognised folder is a *counted drop*, never a row under a
+guessed label.
+
+### What Measuring The Captures Changed
+
+Two facts were established by reading the real bytes, and each overturned a
+choice that looked reasonable beforehand.
+
+#### 1. An index stride is not a sample — it is a hole in time
+
+The runner originally thinned each capture to 40,000 flows by an evenly spaced
+stride, on the sound-looking grounds that a bounded sample is cheaper than the
+full capture. But **both lanes read their features off a time window**: the
+Bouncer's `FlowFeaturizer` accumulates rates over 2 seconds per source IP, and
+the Detective's `WindowedGraphBuilder` emits one graph per 2-second bucket.
+Striding the rows therefore did not take a smaller sample of the same traffic —
+it moved the rows apart in time until each sat alone in its own window.
+
+These captures span **9.26 hours (benign) and 24.75 hours (port scan)**, so the
+stride is far coarser in time than it looks in index space. An evenly spaced
+1-in-13 stride left 3.3 s between consecutive sampled benign flows and 8.9 s
+between sampled scan flows; **89.5% and 64.1% of the resulting graph windows
+held a single edge.** The GAT was being trained on single-edge graphs, which is
+to say on nothing, and it showed: 392 of 393 test verdicts came back
+`UNCERTAIN`, which the repository's convention folds into the attack class, so
+every benign window was scored as a port scan and accuracy landed on a coin
+flip at 0.4911.
+
+The fix is to load every flow and cap what is *derived*. An early attempt got
+this half right — it stopped striding at load but capped the rows to 10,000
+just before windowing, which reintroduced exactly the same starvation. The cap
+now lands on the **windows**. UNCERTAIN verdicts fall from 392/393 to 104/4000
+and the loss starts descending.
+
+#### 2. A 2-second window cannot see a 24-hour scan
+
+The window itself was the next problem, and the repository already had the
+instrument for it: `run_cicids2018_experiment.py` sweeps the window cadence
+"to separate 'the attack is weak' from 'the window is too fine for it'". The
+same sweep here, feeding each class once through a builder per cadence and
+reading the nine window statistics with a cross-validated logistic probe:
+
+| Cadence | Windows | AUC | F1 | Median ports, attack ÷ benign |
+|---|---|---|---|---|
+| 2 s | 17,900 | 0.8300 | 0.5091 | **1.00** |
+| 5 s | 7,785 | 0.8965 | 0.6310 | 1.67 |
+| 10 s | 3,974 | 0.9608 | 0.7788 | 3.00 |
+| **30 s** | **1,352** | **0.9915** | **0.9280** | **11.80** |
+| 60 s | 689 | 0.9612 | 0.9164 | 16.75 |
+| 120 s | 358 | 0.9610 | 0.9317 | 94.75 |
+| 300 s | 156 | 0.9953 | 0.9647 | 66.67 |
+| 600 s | 81 | 0.9964 | 0.9600 | 43.48 |
+
+At 2 seconds the median number of ports a host contacts is **identical between
+the classes** — ratio 1.00. There is no signal at that granularity to find, and
+that is why the GAT could not find it. The `Recon-PortScan` capture is a
+802,300-packet sweep spread over 24.75 hours, so a source appears mid-scan with
+about four of its flows beside it and the fan-out that *is* a port scan never
+assembles inside one 2-second bucket.
+
+The check that keeps this honest is the edge count, which stays matched between
+the classes while the port ratio climbs (73 vs 78 at 30 s, 248 vs 246 at 300 s):
+the coarser window is revealing a scan signature, not estimating the same small
+difference more precisely. UNCERTAIN verdicts corroborate it independently —
+39 at 30 s against 277 at 5 s. The GAT's own numbers agree with the probe's
+choice, which is the useful part: **30 s is best on both axes.**
+
+The window count falls off faster than the AUC rises past 30 s, so 30 s is the
+choice: strong separation with enough windows left to train on. The full sweep
+ships in `cadence_sweep` in the metrics, not just in this table.
+
+#### 3. The captures are too unequal to train on as split
+
+Splitting on captures is the honest split — it never lets one conversation
+appear in both train and test — but these four captures are wildly unequal, and
+the holdout hands training whichever ones land on its side. The Bouncer trained
+on **7,702 flood rows against 131,463 benign**, a 17:1 skew, and answered by
+calling almost everything benign: **recall 0.133, F1 0.2344.**
+
+Striding the majority class down to the minority — after featurizing the full
+stream, so the windows stay intact — takes that to **recall 0.8295, F1
+0.8036**, with AUC essentially unchanged (0.8603 → 0.8563). That near-equality
+is the diagnosis: the imbalance was a threshold artefact, not a shortage of
+signal. The Detective had the mirror problem (1,101 benign windows against 249
+scan windows) and is balanced the same way.
+
+Both lanes record `class_balanced: true` and the pre-balance counts, so the
+subsampling is visible in the artifact rather than done quietly.
+
+### A Note On The Bouncer's Split
+
+`_split_pool` gives each flood capture to one side, so the Bouncer **trains on
+`Mirai-udpplain` and is tested on `DDoS-UDP_Flood`** — a different flood
+family, 5x its size. The `split_strategy_flood` field records this
+(`capture_holdout(train=1,test=1)`). Its F1 of 0.8036 is therefore a
+**cross-attack-family** number, not a within-capture one, and it is a harder
+test than Experiments F and G report. That it holds at all — AUC 0.8563 on a
+flood family it never saw — is the encouraging part; the two families differ in
+rate shape, and the metrics make the difference visible rather than averaging
+it away.
+
+### Train/Test Split
+
+| Lane | Unit | Strategy |
+|---|---|---|
+| Bouncer | capture | `capture_holdout(train=1,test=1)` for flood; `flow_stride_within_single_capture` for benign |
+| Detective | capture | `flow_stride_within_single_capture` for both classes |
+
+The benign class is a single capture, so it cannot be split on captures without
+emptying a side; the fallback is a 1-in-3 stride within it, and the strategy
+string says so rather than letting the fallback pass as the same thing.
+
+### Results
+
+Bouncer — flood vs benign, trained on `Mirai-udpplain`, tested on
+`DDoS-UDP_Flood`:
+
+| Metric | Value |
+|---|---|
+| Accuracy | 0.7973 |
+| Precision | 0.7793 |
+| Recall | 0.8295 |
+| **F1** | **0.8036** |
+| AUC | 0.8563 |
+| Train rows | 7,702 flood + 7,702 benign (balanced from 7,702 / 131,463) |
+
+Detective — port_scan vs benign, 30-second windows, 20 epochs:
+
+| Metric | Value |
+|---|---|
+| Accuracy | 0.8893 |
+| Majority-class accuracy | 0.5000 |
+| Precision | 0.9037 |
+| Recall | 0.8893 |
+| **F1** | **0.8884** |
+| UNCERTAIN verdicts | 39 of 488 |
+| Confusion matrix | `[[240, 4, 0], [50, 194, 0], [0, 0, 0]]` (`benign`, `port_scan`, `lateral_movement`) |
+
+The 0.5 majority baseline matters here: the pools are balanced, so 0.8893 is
+0.39 above chance rather than the 0.11 it would have been against the earlier
+81.5% skewed test set. The unbalanced run reported a *higher* accuracy (0.9231)
+that said less.
+
+### Why The Epoch Count Is 20 And Not 4
+
+The earlier external runners train for 4 epochs. At 4 the loss here is still
+descending steeply — 0.6231 → 0.4600 across the four, with no sign of
+flattening — and the fit is plainly incomplete: **F1 0.6874 at 4 epochs against
+0.8884 at 20**, where the loss settles into a 0.34–0.42 band. The epoch count
+was raised on that convergence check and then confirmed against test F1, so the
+reported figures carry a little of that selection; both the runner and the
+metrics say so, and `--epochs 4` restores the siblings' setting.
+
+### Artifact Paths
+
+```
+models/experiments/ciciot2023/bouncer/     (bouncer.json, calibration.json)
+models/experiments/ciciot2023/detective/   (detective.npz, detective.onnx)
+results/experiments/ciciot2023_metrics.json
+```
+
+### Current Status
+
+```
+STATUS:   COMPLETE
+FLOWS:    442,422 extracted from 34,581,737 packets across 4 captures
+WINDOWS:  498 train / 488 test at a 30 s cadence
+```
+
+| Check | Result |
+|---|---|
+| Bouncer weights load + live inference | **PASSED** |
+| Detective weights load + live inference | **PASSED** |
+| Bouncer F1 (cross-flood-family) | 0.8036 |
+| Detective F1 (against a 0.5 majority baseline) | 0.8884 |
+| Cadence sweep | 8 cadences, in the metrics |
+
+The captures are **deleted after the run** — they are ~6.3 GB of a form-gated
+download, are reproducible from the script, and are excluded by `.gitignore`
+(`data/external/*/*`). Nothing in this section depends on them remaining.
+
+---
+
 ## What Was Removed
 
 A previous iteration of this repository included a second experiment ("API-data experiment") that used **synthetically generated network telemetry** (generated benign/flood/port-scan events, not real data). That experiment has been completely removed because:
@@ -1395,21 +1638,21 @@ A previous iteration of this repository included a second experiment ("API-data 
 
 ## Summary Comparison
 
-| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) | Experiment E (DNS-EXF2021) | Experiment F (CSE-CIC-IDS2018) | Experiment G (CIC-DDoS2019) |
-|---|---|---|---|---|---|---|---|
-| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC | CIC-Bell-DNS-EXF-2021 from UNB/CIC | CSE-CIC-IDS2018 from UNB/CIC (public S3 bucket) | CIC-DDoS2019 from UNB/CIC (form-gated; `01-12` is a partial salvage) |
-| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) | External capture (2021, DNS exfiltration) | External capture (2018, four days) | External capture (2018, two days, volumetric floods) |
-| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) | **Detective only** (no flood class exists) | Bouncer + Detective (**Detective below SLO**) | **Bouncer only** (no port-scan or lateral-movement class exists) |
-| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** | DNS exfiltration → **lateral_movement** | DoS/DDoS → flood, `Infilteration` → port_scan | DrDoS/reflection + direct floods → flood |
-| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** | Reconstructed (**no IPs, ports, bytes or durations in source**) | Reconstructed (**no IPs, no source ports**; `dest_ip` is a bijection of the **real** dest port) | **Real** — but the attacker is one host (`172.16.0.5`) |
-| Clock | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | **Real capture clock** (a first here) | **Real capture clock** |
-| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows | 46,398 flows (from 536,138 rows; 99.95% of attack rows are label-ambiguous and dropped) | 61,224 Bouncer train / 30,158 test; 32,777 graph windows | 1,821,283 rows loaded at stride 32; 10,266 Bouncer train / 5,057 test |
-| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained | not trained | **0.9925** (cross-day 0.9985 … 0.8681) | **0.9991** (cross-day 0.9992 / 0.9993 — a weak test, see below) |
-| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** | **not reportable** — see below | **0.3401 — below the 0.85 SLO** — see below | not trained |
-| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` | `models/experiments/dnsexf2021/` | `models/experiments/cicids2018/{bouncer,detective}/` | `models/experiments/cicddos2019/bouncer/` |
-| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` | `results/experiments/dnsexf2021_metrics.json` | `results/experiments/cicids2018_metrics.json` | `results/experiments/cicddos2019_metrics.json` |
-| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a | Detective PASSED · Bouncer n/a | Bouncer PASSED · Detective PASSED | Bouncer PASSED · Detective n/a |
-| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` | `python scripts/run_dnsexf2021_experiment.py` | `python scripts/run_cicids2018_experiment.py` | `python scripts/run_cicddos2019_experiment.py` |
+| Property | Experiment A (NSL-KDD) | Experiment B (CIC-IDS2017) | Experiment C (UNSW-NB15) | Experiment D (DoHBrw2020) | Experiment E (DNS-EXF2021) | Experiment F (CSE-CIC-IDS2018) | Experiment G (CIC-DDoS2019) | Experiment H (CIC IoT 2023) |
+|---|---|---|---|---|---|---|---|---|
+| Data source | NSL-KDD (`data/real/`) | CIC-IDS2017 from UNB/CIC | UNSW-NB15 from ACCS, UNSW Canberra | CIRA-CIC-DoHBrw-2020 from UNB/CIC | CIC-Bell-DNS-EXF-2021 from UNB/CIC | CSE-CIC-IDS2018 from UNB/CIC (public S3 bucket) | CIC-DDoS2019 from UNB/CIC (form-gated; `01-12` is a partial salvage) | CIC IoT 2023 from UNB/CIC (form-gated; 4 of 34 families) |
+| Data type | Benchmark dataset (1999, KDD-cup era) | External real-world capture (2017) | External capture (2015, IXIA PerfectStorm) | External capture (2019–2020, DoH tunnels) | External capture (2021, DNS exfiltration) | External capture (2018, four days) | External capture (2018, two days, volumetric floods) | External capture (IoT traffic; benign, recon scan, two volumetric floods) |
+| Lanes trained | Bouncer + Detective | Bouncer + Detective | Bouncer + Detective | **Detective only** (no flood class exists) | **Detective only** (no flood class exists) | Bouncer + Detective (**Detective below SLO**) | **Bouncer only** (no port-scan or lateral-movement class exists) | Bouncer + Detective |
+| Attack class(es) | DoS → flood, Probe → port_scan | DoS/DDoS → flood, PortScan → port_scan | DoS → flood, Recon → port_scan | DoH tunnels → **lateral_movement** | DNS exfiltration → **lateral_movement** | DoS/DDoS → flood, `Infilteration` → port_scan | DrDoS/reflection + direct floods → flood | DDoS-UDP/Mirai floods → flood, Recon-PortScan → port_scan |
+| Hosts | Reconstructed (no IPs in source) | Real | Reconstructed (no IPs in source) | **Real** | Reconstructed (**no IPs, ports, bytes or durations in source**) | Reconstructed (**no IPs, no source ports**; `dest_ip` is a bijection of the **real** dest port) | **Real** — but the attacker is one host (`172.16.0.5`) | **Real** — flows this repository extracted from the captures (the publisher's own CSVs carry no addresses) |
+| Clock | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | Synthetic spacing | **Real capture clock** (a first here) | **Real capture clock** | **Real capture clock** |
+| Records | 125,973 train | 2,828,563 flows | 257,673 flows | 60,000 flows | 46,398 flows (from 536,138 rows; 99.95% of attack rows are label-ambiguous and dropped) | 61,224 Bouncer train / 30,158 test; 32,777 graph windows | 1,821,283 rows loaded at stride 32; 10,266 Bouncer train / 5,057 test | 442,422 flows extracted from 34,581,737 packets; 15,404 Bouncer train / 81,348 test; 498 Detective windows train / 488 test |
+| Bouncer F1 | **0.8179** | **0.9987** | **0.9963** | not trained | not trained | **0.9925** (cross-day 0.9985 … 0.8681) | **0.9991** (cross-day 0.9992 / 0.9993 — a weak test, see below) | **0.8036** (cross-flood-family: train Mirai, test DDoS-UDP) |
+| Detective F1 | **1.0000** | **0.9846** | **1.0000** | **0.9697** | **not reportable** — see below | **0.3401 — below the 0.85 SLO** — see below | not trained | **0.8884** (against a 0.5 majority baseline) |
+| Weights | `models/experiments/repo_data/` | `models/experiments/cic_ids2017/` | `models/experiments/unsw_nb15/` | `models/experiments/dohbrw2020/` | `models/experiments/dnsexf2021/` | `models/experiments/cicids2018/{bouncer,detective}/` | `models/experiments/cicddos2019/bouncer/` | `models/experiments/ciciot2023/{bouncer,detective}/` |
+| Metrics | `results/experiments/repo_data_metrics.json` | `results/experiments/cic_ids2017_metrics.json` | `results/experiments/unsw_nb15_metrics.json` | `results/experiments/dohbrw2020_metrics.json` | `results/experiments/dnsexf2021_metrics.json` | `results/experiments/cicids2018_metrics.json` | `results/experiments/cicddos2019_metrics.json` | `results/experiments/ciciot2023_metrics.json` |
+| Weight load | PASSED | PASSED | PASSED | Detective PASSED · Bouncer n/a | Detective PASSED · Bouncer n/a | Bouncer PASSED · Detective PASSED | Bouncer PASSED · Detective n/a | Bouncer PASSED · Detective PASSED |
+| Script | `python scripts/run_repo_experiment.py` | `python scripts/run_cic_experiment.py` | `python scripts/run_unsw_nb15_experiment.py` | `python scripts/run_dohbrw2020_experiment.py` | `python scripts/run_dnsexf2021_experiment.py` | `python scripts/run_cicids2018_experiment.py` | `python scripts/run_cicddos2019_experiment.py` | `python scripts/run_ciciot2023_experiment.py` |
 
 Experiment E is the only entry here whose Detective F1 is withheld. Its
 trained score is 1.0000, but the dataset's label-ambiguity ceiling is 0.8210
@@ -1445,6 +1688,37 @@ compares two captures of the same lab rather than two environments. It ships as
 `verdict: BOUNCER_REPORTABLE`, with its section stating that it confirms the
 rate-based feature set on the case it was designed for and says nothing about
 distributed floods.
+
+Experiment H is the first entry here whose **rows are not the publisher's**, and
+its numbers should be read with that in mind. The release ships a CSV per family
+but it carries no IP, port or timestamp, so four of the Bouncer's six features
+would have had to be invented; the loader reads the packet captures instead and
+groups them into bidirectional 5-tuple flows itself. Every address, port and
+timestamp is the capture's own, but the *flow definition* is this repository's
+choice, which is one more way the result could differ from a published table.
+
+Two of its three findings are corrections rather than results. First, the
+runner originally thinned each capture to 40,000 rows by an evenly spaced
+stride — but both lanes read their features off a 2-second window, and a stride
+over captures spanning 9–25 hours does not sample traffic, it punches holes in
+it: 89.5% of benign graph windows were left holding a single edge, and 392 of
+393 test verdicts came back `UNCERTAIN`. Loading at full density and capping the
+*derived* windows instead fixed it. Second, the 2-second production window
+simply cannot see a port scan spread over 24.75 hours — at that cadence the
+median number of ports contacted is **identical** between benign and scan
+windows (ratio 1.00) — so the Detective trains on a 30-second window, chosen by
+the same cadence sweep Experiment F used and shipped in the artifact.
+
+Its Bouncer number is the weakest in this table, deliberately. The
+capture-holdout split puts `Mirai-udpplain` in training and `DDoS-UDP_Flood` in
+test, so 0.8036 is a **cross-flood-family** score, not a within-capture one —
+the two floods differ in rate shape and the split refuses to average that away.
+The Detective's 0.8884 is measured against a **0.5** majority baseline rather
+than the 0.815 a skewed test set would have given it. Both lanes record
+`class_balanced: true` with their pre-balance counts, because the four captures
+are wildly unequal (7,702 flood rows against 131,463 benign) and training on
+them as split would otherwise have produced a strong-looking AUC over a model
+that called everything benign.
 
 ---
 
@@ -1536,6 +1810,39 @@ runner prints both the survey (including
 `benign_rows_dropped_on_flood_hosts`) and the label-quality ceiling; if either is
 missing, the run did not execute the measurement path.
 
+### Experiment H
+```bash
+# Form-gated, like CIC-DDoS2019: the downloader posts to insert.php and walks the
+# capture tree with the returned cookie. Values come from --flags or the
+# KRONUS_CIC_FIRST_NAME / _LAST_NAME / _EMAIL / _INSTITUTION / _JOB_TITLE /
+# KRONUS_CIC_COUNTRY environment variables. No personal details are committed.
+# The walk covers 34 family folders; this fetches one capture from each of four.
+python scripts/download_ciciot2023.py \
+  --first-name ... --last-name ... --email ... \
+  --institution ... --job-title ... --country ...
+python scripts/run_ciciot2023_experiment.py
+# Reclaim the space when done (~6.3 GB):
+rm -rf data/external/ciciot2023
+```
+
+Expect `STATUS: COMPLETE` with a Bouncer F1 near 0.80 (cross-flood-family) and a
+Detective F1 near 0.89 against a 0.5 majority baseline. This run reads **every
+flow** in the four captures — about 3.5 minutes of loading, and ~40 s of
+Detective training at 30 s windows and 20 epochs on an M1. Two flags exist
+because the defaults are load-bearing rather than arbitrary: `--epochs 4` uses
+the sibling runners' setting (and re-derives the undertrained F1 0.687), and
+`--detective-window-seconds 2` restores the production cadence (and re-derives
+the ~0.51 F1 the cadence sweep explains). `--skip-cadence-sweep` drops the
+pre-training measurement if only the trained figures are wanted. The run is
+deterministic: re-running reproduces the table figures exactly, with only the
+wall-clock timings differing.
+
+Loading is not strided, and that is deliberate. If `--sample-per-capture` is set
+the loader thins rows *before* the 2-second windows are built, which on captures
+this long leaves most windows holding a single edge — the metrics will show it
+as a collapsed F1 and a large `n_uncertain_verdicts`. Leave it unset unless a
+capture will not fit in memory.
+
 ### Recorded Seeds
 
 | Experiment | Component | Seed |
@@ -1558,3 +1865,7 @@ missing, the run did not execute the measurement path.
 | Split (CIC-IDS2018) | Detective | 42 (per-class, stratified 67/33, evenly spaced stride) |
 | CIC-DDoS2019 | Bouncer | 42 |
 | Split (CIC-DDoS2019) | Bouncer | 42 (per-day, stratified 67/33, global stride 32) |
+| CIC IoT 2023 | Bouncer | 42 |
+| CIC IoT 2023 | Detective | 42 |
+| Split (CIC IoT 2023) | Bouncer (flood) | 42 (capture holdout: train Mirai-udpplain, test DDoS-UDP_Flood) |
+| Split (CIC IoT 2023) | Both (benign, scan) | 42 (within-capture stride 67/33, applied to windows after the full stream is featurized) |
