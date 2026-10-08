@@ -83,15 +83,39 @@ def _ethernet(datagram: bytes, ethertype: int = ETHERTYPE_IPV4) -> bytes:
     return b"\xaa" * 6 + b"\xbb" * 6 + struct.pack("!H", ethertype) + datagram
 
 
-def _write_pcap(path, records, linktype: int = 1, magic: bytes = b"\xa1\xb2\xc3\xd4"):
-    """records: (timestamp_seconds, frame_bytes). Classic little-endian pcap."""
+# The magic a pcap carries is the value 0xa1b2c3d4 written in the file's OWN
+# byte order, so the byte strings are reverses of each other. Spelled out here
+# rather than borrowed from the loader on purpose: if the reader's table is
+# inverted, these files must NOT follow it, or the tests would agree with the
+# bug. (They did, once: the reader read version 512 and found no frames, and a
+# hand-written helper that inverted the same way kept every test green.)
+_MAGIC_BYTES = {
+    ("little", False): b"\xd4\xc3\xb2\xa1",
+    ("big", False): b"\xa1\xb2\xc3\xd4",
+    ("little", True): b"\x4d\x3c\xb2\xa1",
+    ("big", True): b"\xa1\xb2\x3c\x4d",
+}
+_STRUCT_PREFIX = {"little": "<", "big": ">"}
+
+
+def _write_pcap(path, records, linktype: int = 1, endian: str = "little",
+                nanosecond: bool = False):
+    """records: (timestamp_seconds, frame_bytes), written as a classic pcap.
+
+    Default is little-endian because that is what the publisher's captures are;
+    the tests that care about the other order ask for it explicitly.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = _STRUCT_PREFIX[endian]
+    divisor = 1_000_000_000 if nanosecond else 1_000_000
     with open(path, "wb") as handle:
-        handle.write(magic + struct.pack("<HHIIII", 2, 4, 0, 0, 65535, linktype))
+        handle.write(_MAGIC_BYTES[(endian, nanosecond)]
+                     + struct.pack(f"{prefix}HHIIII", 2, 4, 0, 0, 65535, linktype))
         for ts, frame in records:
             seconds = int(ts)
-            micros = int(round((ts - seconds) * 1_000_000))
-            handle.write(struct.pack("<IIII", seconds, micros, len(frame), len(frame)))
+            fraction = int(round((ts - seconds) * divisor))
+            handle.write(struct.pack(f"{prefix}IIII", seconds, fraction,
+                                     len(frame), len(frame)))
             handle.write(frame)
 
 
@@ -433,18 +457,42 @@ def test_by_capture_keeps_each_capture_separate(tmp_path):
 
 
 def test_a_big_endian_capture_reads_the_same(tmp_path):
-    """The release could plausibly ship either byte order; the reader keys on
-    the magic word, so both work."""
-    path = tmp_path / "Benign_Final" / "b.pcap"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as handle:
-        handle.write(b"\xd4\xc3\xb2\xa1" + struct.pack(">HHIIII", 2, 4, 0, 0, 65535, 1))
-        frame = _ethernet(_tcp("10.0.0.1", "10.0.0.2", 5000, 80))
-        handle.write(struct.pack(">IIII", 1, 500000, len(frame), len(frame)))
-        handle.write(frame)
+    """The release could plausibly ship either byte order, so both are read.
+    Getting this backwards does not crash — it reads version 512, linktype
+    16777216 and no frames — so it is asserted rather than assumed."""
+    _write_pcap(tmp_path / "Benign_Final" / "b.pcap",
+                _eth_records([(1.5, _tcp("10.0.0.1", "10.0.0.2", 5000, 80))]),
+                endian="big")
 
     rows = load_ciciot2023(tmp_path)
 
     assert len(rows) == 1
     assert rows[0].source_ip == "10.0.0.1"
     assert rows[0].duration_ms == 0
+
+
+def test_a_nanosecond_capture_keeps_sub_microsecond_precision(tmp_path):
+    """The nanosecond tick is a different magic, not a different format; the
+    read-back time must still be the capture's own."""
+    _write_pcap(tmp_path / "Benign_Final" / "b.pcap",
+                _eth_records([(1.000000001, _tcp("10.0.0.1", "10.0.0.2", 5000, 80))]),
+                nanosecond=True)
+
+    _, times = load_ciciot2023_timed(tmp_path)
+
+    assert times == [pytest.approx(1.000000001)]
+
+
+def test_the_publisher_byte_order_is_little_endian(tmp_path):
+    """The captures this loader was built against ship little-endian. Pinned
+    here because the whole reader hangs off it, and because the inverted table
+    produced a plausible-looking 'empty capture' rather than an error."""
+    _write_pcap(tmp_path / "Benign_Final" / "b.pcap",
+                _eth_records([(1.0, _tcp("10.0.0.1", "10.0.0.2", 5000, 80))]))
+
+    header = (tmp_path / "Benign_Final" / "b.pcap").read_bytes()[:24]
+
+    assert header[:4] == b"\xd4\xc3\xb2\xa1"
+    assert int.from_bytes(header[4:6], "little") == 2      # version major
+    assert int.from_bytes(header[20:24], "little") == 1    # LINKTYPE_ETHERNET
+    assert len(load_ciciot2023(tmp_path)) == 1

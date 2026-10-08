@@ -137,13 +137,24 @@ def resolve_family(name: object) -> tuple[str, Label] | None:
 
 # magic -> (byte order, nanosecond timestamps). All four are the same format
 # with a different byte order and a different tick, so one reader covers them.
+#
+# The magic is the value 0xa1b2c3d4 written in the *file's own* byte order, so
+# the bytes on disk are the reverse of each other: `a1 b2 c3 d4` is a
+# big-endian file and `d4 c3 b2 a1` a little-endian one. This is worth being
+# explicit about because getting it backwards does not crash — it reads version
+# 512 and linktype 16777216 and then finds no frames, which looks exactly like
+# an empty capture. The captures this loader was built against are the
+# little-endian pair; the table is exercised both ways by the unit tests, which
+# now build their files with the same mapping the reader uses rather than a
+# hand-written byte string.
+#
 # The order is named rather than spelled "<"/">" because `int.from_bytes` and
 # `struct` spell it differently, and the two must not drift apart.
 _PCAP_MAGICS: dict[bytes, tuple[str, bool]] = {
-    b"\xa1\xb2\xc3\xd4": ("little", False),
-    b"\xd4\xc3\xb2\xa1": ("big", False),
-    b"\xa1\xb2\x3c\x4d": ("little", True),
-    b"\x4d\x3c\xb2\xa1": ("big", True),
+    b"\xa1\xb2\xc3\xd4": ("big", False),
+    b"\xd4\xc3\xb2\xa1": ("little", False),
+    b"\xa1\xb2\x3c\x4d": ("big", True),
+    b"\x4d\x3c\xb2\xa1": ("little", True),
 }
 
 _STRUCT_PREFIX = {"little": "<", "big": ">"}
