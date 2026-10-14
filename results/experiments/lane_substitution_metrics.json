@@ -1,0 +1,750 @@
+{
+  "experiment": "lane_substitution",
+  "status": "COMPLETE",
+  "timestamp": "2026-10-13T17:56:15.752161+00:00",
+  "description": "Routes the exact event stream that formed each baseline experiment's Detective test windows to the already-trained Bouncer, scores both lanes on those identical windows, and reports the delta.",
+  "datasets": {
+    "unsw_nb15": {
+      "experiment": "lane_substitution",
+      "dataset": "unsw_nb15",
+      "dataset_source": "UNSW-NB15 (Australian Centre for Cyber Security, UNSW Canberra)",
+      "status": "COMPLETE",
+      "runner_baseline": "scripts/run_unsw_nb15_experiment.py",
+      "question": "Route the exact event stream that formed the Detective's test windows to the already-trained Bouncer and score both lanes on those same windows.",
+      "method": {
+        "split": "identical to the runner (per-class stratified, seed 42, ratio 0.67)",
+        "detective_limit_per_class": 10000,
+        "row_spacing_ms": 20,
+        "window_seconds": 2.0,
+        "window_rule": "mirrors WindowedGraphBuilder.ingest (the closing event opens the next window)",
+        "featurizer": "one FlowFeaturizer per class stream, as the runners do",
+        "bouncer_stream_order": "the Detective's own replay order (NOT re-sorted by source_ip)",
+        "window_aggregate_primary": "max",
+        "window_aggregate_secondary": "mean",
+        "bouncer_threshold": 0.5,
+        "scores_are_frozen_artifacts": true
+      },
+      "test_set": {
+        "windows": 66,
+        "windows_benign": 33,
+        "windows_attack": 33,
+        "events": 6600,
+        "events_benign": 3300,
+        "events_attack": 3300
+      },
+      "baseline_reported_by_runner": {
+        "detective_f1_macro": 1.0,
+        "bouncer_f1_own_task": 0.9963,
+        "note": "The runner's Bouncer number is measured on the Bouncer's OWN flood-vs-benign test set, NOT on the Detective's windows. That is the parallel comparison this experiment replaces."
+      },
+      "lanes": {
+        "detective": {
+          "artifact": "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/detective",
+          "granularity": "one verdict per 2-second graph window",
+          "metrics": {
+            "accuracy": 1.0,
+            "precision_macro": 1.0,
+            "recall_macro": 1.0,
+            "f1_macro": 1.0,
+            "precision_port_scan": 1.0,
+            "recall_port_scan": 1.0,
+            "f1_port_scan": 1.0,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                33,
+                0
+              ],
+              [
+                0,
+                33
+              ]
+            ]
+          },
+          "inference_seconds_total": 0.0525,
+          "inference_seconds_per_window_ms": 0.7962
+        },
+        "bouncer_substitution": {
+          "artifact": "/Users/manavjobanputra/kronos/models/experiments/unsw_nb15/bouncer",
+          "granularity": "one score per event, aggregated to the window",
+          "aggregate_primary": "max",
+          "metrics": {
+            "accuracy": 0.9848,
+            "precision_macro": 0.9853,
+            "recall_macro": 0.9848,
+            "f1_macro": 0.9848,
+            "precision_port_scan": 0.9706,
+            "recall_port_scan": 1.0,
+            "f1_port_scan": 0.9851,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                32,
+                1
+              ],
+              [
+                0,
+                33
+              ]
+            ]
+          },
+          "auc": 0.9821,
+          "best_threshold": {
+            "f1": 0.9851,
+            "threshold": 0.741403
+          },
+          "aggregate_secondary": "mean",
+          "metrics_mean": {
+            "accuracy": 1.0,
+            "precision_macro": 1.0,
+            "recall_macro": 1.0,
+            "f1_macro": 1.0,
+            "precision_port_scan": 1.0,
+            "recall_port_scan": 1.0,
+            "f1_port_scan": 1.0,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                33,
+                0
+              ],
+              [
+                0,
+                33
+              ]
+            ]
+          },
+          "auc_mean": 1.0,
+          "best_threshold_mean": {
+            "f1": 1.0,
+            "threshold": 0.575747
+          },
+          "events_scored": 6600,
+          "inference_seconds_total": 0.0329,
+          "inference_seconds_per_event_ms": 0.004977,
+          "flow_level": {
+            "note": "each test flow scored directly (no windowing) \u2014 the finest grain available",
+            "metrics": {
+              "accuracy": 0.9711,
+              "precision_macro": 0.9726,
+              "recall_macro": 0.9711,
+              "f1_macro": 0.971,
+              "precision_port_scan": 0.9994,
+              "recall_port_scan": 0.9427,
+              "f1_port_scan": 0.9702,
+              "confusion_matrix_labels": [
+                "benign",
+                "port_scan"
+              ],
+              "confusion_matrix": [
+                [
+                  3298,
+                  2
+                ],
+                [
+                  189,
+                  3111
+                ]
+              ]
+            },
+            "auc": 0.9943,
+            "best_threshold": {
+              "f1": 0.9795,
+              "threshold": 0.072809
+            }
+          },
+          "score_distribution_per_class": [
+            {
+              "class": "benign",
+              "n": 33,
+              "median": 0.0275,
+              "p05": 0.0065,
+              "p95": 0.3249,
+              "mean": 0.0988
+            },
+            {
+              "class": "port_scan",
+              "n": 33,
+              "median": 0.9722,
+              "p05": 0.7414,
+              "p95": 0.9722,
+              "mean": 0.9356
+            }
+          ],
+          "event_score_distribution_per_class": [
+            {
+              "class": "benign_events",
+              "n": 3300,
+              "median": 0.0006,
+              "p05": 0.0001,
+              "p95": 0.008,
+              "mean": 0.0033
+            },
+            {
+              "class": "port_scan_events",
+              "n": 3300,
+              "median": 0.7119,
+              "p05": 0.2829,
+              "p95": 0.9722,
+              "mean": 0.698
+            }
+          ]
+        }
+      },
+      "substitution_delta_vs_detective": {
+        "note": "bouncer_substitution minus detective, on identical windows",
+        "max_aggregate": {
+          "accuracy": -0.0152,
+          "precision_macro": -0.0147,
+          "recall_macro": -0.0152,
+          "f1_macro": -0.0152,
+          "precision_port_scan": -0.0294,
+          "recall_port_scan": 0.0,
+          "f1_port_scan": -0.0149
+        },
+        "mean_aggregate": {
+          "accuracy": 0.0,
+          "precision_macro": 0.0,
+          "recall_macro": 0.0,
+          "f1_macro": 0.0,
+          "precision_port_scan": 0.0,
+          "recall_port_scan": 0.0,
+          "f1_port_scan": 0.0
+        },
+        "flow_level": {
+          "accuracy": -0.0289,
+          "precision_macro": -0.0274,
+          "recall_macro": -0.0289,
+          "f1_macro": -0.029,
+          "precision_port_scan": -0.0006,
+          "recall_port_scan": -0.0573,
+          "f1_port_scan": -0.0298
+        }
+      },
+      "cost": {
+        "detective_ms_per_window": 0.7962,
+        "bouncer_ms_per_event": 0.004977,
+        "events_per_window_observed": 100.0,
+        "note": "The Detective's cost is per window and includes graph inference; the Bouncer's is per event and needs no graph. Both are wall-clock on this machine over the whole test set, CPU only."
+      },
+      "retrained_variant": {
+        "note": "SEPARATE from the substitution result above. A fresh Bouncer with the same six features and the same XGBoost recipe, trained on the Detective's own training rows (benign vs port_scan) and scored on the same test windows. This isolates 'the fast features cannot see a scan' from 'the shipped Bouncer was never asked to'.",
+        "train_rows": 13400,
+        "train_attack": 6700,
+        "train_benign": 6700,
+        "fit_seconds": 0.117,
+        "metrics": {
+          "accuracy": 0.8636,
+          "precision_macro": 0.8929,
+          "recall_macro": 0.8636,
+          "f1_macro": 0.8611,
+          "precision_port_scan": 0.7857,
+          "recall_port_scan": 1.0,
+          "f1_port_scan": 0.88,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              24,
+              9
+            ],
+            [
+              0,
+              33
+            ]
+          ]
+        },
+        "auc": 1.0,
+        "best_threshold": {
+          "f1": 1.0,
+          "threshold": 0.999791
+        },
+        "flow_level": {
+          "metrics": {
+            "accuracy": 0.9938,
+            "precision_macro": 0.9938,
+            "recall_macro": 0.9938,
+            "f1_macro": 0.9938,
+            "precision_port_scan": 0.9948,
+            "recall_port_scan": 0.9927,
+            "f1_port_scan": 0.9938,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                3283,
+                17
+              ],
+              [
+                24,
+                3276
+              ]
+            ]
+          },
+          "auc": 0.9997,
+          "best_threshold": {
+            "f1": 0.9941,
+            "threshold": 0.450628
+          }
+        },
+        "delta_vs_detective": {
+          "accuracy": -0.1364,
+          "precision_macro": -0.1071,
+          "recall_macro": -0.1364,
+          "f1_macro": -0.1389,
+          "precision_port_scan": -0.2143,
+          "recall_port_scan": 0.0,
+          "f1_port_scan": -0.12
+        }
+      },
+      "sorted_order_sensitivity": {
+        "note": "ABLATION, not a result. The Bouncer's own training path sorts rows by source_ip so a host's traffic is contiguous; the substitution above deliberately does not, because re-ordering is changing the data. This block re-runs BOTH lanes over the source_ip-sorted stream so the size of that ordering effect is measured rather than assumed.",
+        "windows": 66,
+        "bouncer_metrics": {
+          "accuracy": 0.9697,
+          "precision_macro": 0.9714,
+          "recall_macro": 0.9697,
+          "f1_macro": 0.9697,
+          "precision_port_scan": 0.9429,
+          "recall_port_scan": 1.0,
+          "f1_port_scan": 0.9706,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              31,
+              2
+            ],
+            [
+              0,
+              33
+            ]
+          ]
+        },
+        "bouncer_auc": 0.9467,
+        "bouncer_best_threshold": {
+          "f1": 0.9706,
+          "threshold": 0.711905
+        },
+        "detective_metrics": {
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "precision_port_scan": 1.0,
+          "recall_port_scan": 1.0,
+          "f1_port_scan": 1.0,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              33,
+              0
+            ],
+            [
+              0,
+              33
+            ]
+          ]
+        },
+        "bouncer_delta_vs_detective": {
+          "accuracy": -0.0303,
+          "precision_macro": -0.0286,
+          "recall_macro": -0.0303,
+          "f1_macro": -0.0303,
+          "precision_port_scan": -0.0571,
+          "recall_port_scan": 0.0,
+          "f1_port_scan": -0.0294
+        }
+      }
+    },
+    "cic_ids2017": {
+      "experiment": "lane_substitution",
+      "dataset": "cic_ids2017",
+      "dataset_source": "CIC-IDS2017 (GeneratedLabelledFlows/MachineLearningCSV)",
+      "status": "COMPLETE",
+      "runner_baseline": "scripts/run_cic_experiment.py",
+      "question": "Route the exact event stream that formed the Detective's test windows to the already-trained Bouncer and score both lanes on those same windows.",
+      "method": {
+        "split": "identical to the runner (per-class stratified, seed 42, ratio 0.67)",
+        "detective_limit_per_class": 20000,
+        "row_spacing_ms": 20,
+        "window_seconds": 2.0,
+        "window_rule": "mirrors WindowedGraphBuilder.ingest (the closing event opens the next window)",
+        "featurizer": "one FlowFeaturizer per class stream, as the runners do",
+        "bouncer_stream_order": "the Detective's own replay order (NOT re-sorted by source_ip)",
+        "window_aggregate_primary": "max",
+        "window_aggregate_secondary": "mean",
+        "bouncer_threshold": 0.5,
+        "scores_are_frozen_artifacts": true
+      },
+      "test_set": {
+        "windows": 132,
+        "windows_benign": 66,
+        "windows_attack": 66,
+        "events": 13200,
+        "events_benign": 6600,
+        "events_attack": 6600
+      },
+      "baseline_reported_by_runner": {
+        "detective_f1_macro": 0.9846,
+        "bouncer_f1_own_task": 0.9987,
+        "note": "The runner's Bouncer number is measured on the Bouncer's OWN flood-vs-benign test set, NOT on the Detective's windows. That is the parallel comparison this experiment replaces."
+      },
+      "lanes": {
+        "detective": {
+          "artifact": "/Users/manavjobanputra/kronos/models/experiments/cic_ids2017/detective",
+          "granularity": "one verdict per 2-second graph window",
+          "metrics": {
+            "accuracy": 0.9848,
+            "precision_macro": 0.9853,
+            "recall_macro": 0.9848,
+            "f1_macro": 0.9848,
+            "precision_port_scan": 1.0,
+            "recall_port_scan": 0.9697,
+            "f1_port_scan": 0.9846,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                66,
+                0
+              ],
+              [
+                2,
+                64
+              ]
+            ]
+          },
+          "inference_seconds_total": 0.1269,
+          "inference_seconds_per_window_ms": 0.9611
+        },
+        "bouncer_substitution": {
+          "artifact": "/Users/manavjobanputra/kronos/models/experiments/cic_ids2017/bouncer",
+          "granularity": "one score per event, aggregated to the window",
+          "aggregate_primary": "max",
+          "metrics": {
+            "accuracy": 0.3788,
+            "precision_macro": 0.2155,
+            "recall_macro": 0.3788,
+            "f1_macro": 0.2747,
+            "precision_port_scan": 0.0,
+            "recall_port_scan": 0.0,
+            "f1_port_scan": 0.0,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                50,
+                16
+              ],
+              [
+                66,
+                0
+              ]
+            ]
+          },
+          "auc": 0.0466,
+          "best_threshold": {
+            "f1": 0.6769,
+            "threshold": 0.0
+          },
+          "aggregate_secondary": "mean",
+          "metrics_mean": {
+            "accuracy": 0.5,
+            "precision_macro": 0.25,
+            "recall_macro": 0.5,
+            "f1_macro": 0.3333,
+            "precision_port_scan": 0.0,
+            "recall_port_scan": 0.0,
+            "f1_port_scan": 0.0,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                66,
+                0
+              ],
+              [
+                66,
+                0
+              ]
+            ]
+          },
+          "auc_mean": 0.0909,
+          "best_threshold_mean": {
+            "f1": 0.6875,
+            "threshold": 0.0
+          },
+          "events_scored": 13200,
+          "inference_seconds_total": 0.3141,
+          "inference_seconds_per_event_ms": 0.023798,
+          "flow_level": {
+            "note": "each test flow scored directly (no windowing) \u2014 the finest grain available",
+            "metrics": {
+              "accuracy": 0.4979,
+              "precision_macro": 0.2495,
+              "recall_macro": 0.4979,
+              "f1_macro": 0.3324,
+              "precision_port_scan": 0.0,
+              "recall_port_scan": 0.0,
+              "f1_port_scan": 0.0,
+              "confusion_matrix_labels": [
+                "benign",
+                "port_scan"
+              ],
+              "confusion_matrix": [
+                [
+                  6572,
+                  28
+                ],
+                [
+                  6600,
+                  0
+                ]
+              ]
+            },
+            "auc": 0.6889,
+            "best_threshold": {
+              "f1": 0.8566,
+              "threshold": 0.0
+            }
+          },
+          "score_distribution_per_class": [
+            {
+              "class": "benign",
+              "n": 66,
+              "median": 0.0062,
+              "p05": 0.0,
+              "p95": 0.9952,
+              "mean": 0.2384
+            },
+            {
+              "class": "port_scan",
+              "n": 66,
+              "median": 0.0,
+              "p05": 0.0,
+              "p95": 0.0,
+              "mean": 0.0
+            }
+          ],
+          "event_score_distribution_per_class": [
+            {
+              "class": "benign_events",
+              "n": 6600,
+              "median": 0.0,
+              "p05": 0.0,
+              "p95": 0.0006,
+              "mean": 0.0042
+            },
+            {
+              "class": "port_scan_events",
+              "n": 6600,
+              "median": 0.0,
+              "p05": 0.0,
+              "p95": 0.0,
+              "mean": 0.0
+            }
+          ]
+        }
+      },
+      "substitution_delta_vs_detective": {
+        "note": "bouncer_substitution minus detective, on identical windows",
+        "max_aggregate": {
+          "accuracy": -0.606,
+          "precision_macro": -0.7698,
+          "recall_macro": -0.606,
+          "f1_macro": -0.7101,
+          "precision_port_scan": -1.0,
+          "recall_port_scan": -0.9697,
+          "f1_port_scan": -0.9846
+        },
+        "mean_aggregate": {
+          "accuracy": -0.4848,
+          "precision_macro": -0.7353,
+          "recall_macro": -0.4848,
+          "f1_macro": -0.6515,
+          "precision_port_scan": -1.0,
+          "recall_port_scan": -0.9697,
+          "f1_port_scan": -0.9846
+        },
+        "flow_level": {
+          "accuracy": -0.4869,
+          "precision_macro": -0.7358,
+          "recall_macro": -0.4869,
+          "f1_macro": -0.6524,
+          "precision_port_scan": -1.0,
+          "recall_port_scan": -0.9697,
+          "f1_port_scan": -0.9846
+        }
+      },
+      "cost": {
+        "detective_ms_per_window": 0.9611,
+        "bouncer_ms_per_event": 0.023798,
+        "events_per_window_observed": 100.0,
+        "note": "The Detective's cost is per window and includes graph inference; the Bouncer's is per event and needs no graph. Both are wall-clock on this machine over the whole test set, CPU only."
+      },
+      "retrained_variant": {
+        "note": "SEPARATE from the substitution result above. A fresh Bouncer with the same six features and the same XGBoost recipe, trained on the Detective's own training rows (benign vs port_scan) and scored on the same test windows. This isolates 'the fast features cannot see a scan' from 'the shipped Bouncer was never asked to'.",
+        "train_rows": 26800,
+        "train_attack": 13400,
+        "train_benign": 13400,
+        "fit_seconds": 0.128,
+        "metrics": {
+          "accuracy": 0.9924,
+          "precision_macro": 0.9925,
+          "recall_macro": 0.9924,
+          "f1_macro": 0.9924,
+          "precision_port_scan": 0.9851,
+          "recall_port_scan": 1.0,
+          "f1_port_scan": 0.9925,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              65,
+              1
+            ],
+            [
+              0,
+              66
+            ]
+          ]
+        },
+        "auc": 1.0,
+        "best_threshold": {
+          "f1": 1.0,
+          "threshold": 0.999755
+        },
+        "flow_level": {
+          "metrics": {
+            "accuracy": 0.998,
+            "precision_macro": 0.998,
+            "recall_macro": 0.998,
+            "f1_macro": 0.998,
+            "precision_port_scan": 0.9997,
+            "recall_port_scan": 0.9964,
+            "f1_port_scan": 0.998,
+            "confusion_matrix_labels": [
+              "benign",
+              "port_scan"
+            ],
+            "confusion_matrix": [
+              [
+                6598,
+                2
+              ],
+              [
+                24,
+                6576
+              ]
+            ]
+          },
+          "auc": 0.9999,
+          "best_threshold": {
+            "f1": 0.9987,
+            "threshold": 0.015342
+          }
+        },
+        "delta_vs_detective": {
+          "accuracy": 0.0076,
+          "precision_macro": 0.0072,
+          "recall_macro": 0.0076,
+          "f1_macro": 0.0076,
+          "precision_port_scan": -0.0149,
+          "recall_port_scan": 0.0303,
+          "f1_port_scan": 0.0079
+        }
+      },
+      "sorted_order_sensitivity": {
+        "note": "ABLATION, not a result. The Bouncer's own training path sorts rows by source_ip so a host's traffic is contiguous; the substitution above deliberately does not, because re-ordering is changing the data. This block re-runs BOTH lanes over the source_ip-sorted stream so the size of that ordering effect is measured rather than assumed.",
+        "windows": 132,
+        "bouncer_metrics": {
+          "accuracy": 0.4924,
+          "precision_macro": 0.2481,
+          "recall_macro": 0.4924,
+          "f1_macro": 0.3299,
+          "precision_port_scan": 0.0,
+          "recall_port_scan": 0.0,
+          "f1_port_scan": 0.0,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              65,
+              1
+            ],
+            [
+              66,
+              0
+            ]
+          ]
+        },
+        "bouncer_auc": 0.5473,
+        "bouncer_best_threshold": {
+          "f1": 0.8148,
+          "threshold": 0.0
+        },
+        "detective_metrics": {
+          "accuracy": 0.9848,
+          "precision_macro": 0.9853,
+          "recall_macro": 0.9848,
+          "f1_macro": 0.9848,
+          "precision_port_scan": 1.0,
+          "recall_port_scan": 0.9697,
+          "f1_port_scan": 0.9846,
+          "confusion_matrix_labels": [
+            "benign",
+            "port_scan"
+          ],
+          "confusion_matrix": [
+            [
+              66,
+              0
+            ],
+            [
+              2,
+              64
+            ]
+          ]
+        },
+        "bouncer_delta_vs_detective": {
+          "accuracy": -0.4924,
+          "precision_macro": -0.7372,
+          "recall_macro": -0.4924,
+          "f1_macro": -0.6549,
+          "precision_port_scan": -1.0,
+          "recall_port_scan": -0.9697,
+          "f1_port_scan": -0.9846
+        }
+      }
+    }
+  }
+}
